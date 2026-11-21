@@ -306,3 +306,48 @@ nav kbd { margin-left: 4px; font-size: .75rem; color: var(--text-secondary); }
   .setting-value { gap: 12px; min-width: 68px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Relay-wing mechanics share the established menu typography. */
+.chapter-heading { font-size: var(--text-label); font-weight: 500; color: var(--orange); padding: 18px 12px 10px; border-bottom: 1px solid var(--rule); }
+.mechanic-status { display: grid; gap: 6px; margin-top: 10px; font-size: var(--text-caption); color: var(--text-secondary); }
+.mechanic-status:empty { display: none; }
+.mechanic-status .active { color: var(--green); }
+.phase-cool { color: #9acfff; }
+.phase-warm { color: #edbb7f; }
+.phase-badge { display: inline-block; font-size: .75rem; margin-left: 6px; font-weight: 500; }
+@media (max-height: 760px) { .home-actions { margin-top: 16px; } .home-progress { margin-top: 16px; } }
+
+/* Radio conversations: the same readable type family, with the room visible behind. */
+#app[data-screen="story"] .topbar { display: none; }
+#app[data-screen="story"] .modal-backdrop { align-items: flex-end; padding: 32px max(32px, calc((100vw - 1040px) / 2)); background: linear-gradient(0deg, #080e12ed, #080e1266 55%, #080e1222); }
+#app[data-screen="story"] .dialog { width: 1040px; max-height: calc(100dvh - 64px); border-top: 2px solid var(--orange); background: #192023f5; }
+#app[data-screen="story"] .dialog-heading { padding-bottom: 18px; }
+#app[data-screen="story"] .dialog h1 { font-size: 1.375rem; font-weight: var(--weight-medium); }
+#app[data-screen="story"] .dialog-context { display: none; }
+.story-location { color: var(--text-muted); font-size: var(--text-small); margin-bottom: 16px; }
+.story-conversation { display: grid; grid-template-columns: 150px minmax(0, 1fr); align-items: center; gap: 30px; }
+.story-portrait { align-self: end; border-bottom: 2px solid var(--speaker-color); background: linear-gradient(0deg, #ccd5b70a, transparent); }
+.story-portrait svg { display: block; width: 100%; aspect-ratio: 1; }
+.story-speaker { display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px; }
+.story-speaker b { font-size: 1.125rem; font-weight: var(--weight-medium); color: var(--speaker-color); }
+.story-speaker span { font-size: var(--text-small); color: var(--text-muted); }
+.story-dialogue { min-height: 150px; }
+.story-dialogue>p { font-size: 1.1875rem; font-weight: var(--weight-regular); color: #eee7d5; line-height: 1.85; max-width: 38em; }
+.story-progress { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: 20px; font-size: var(--text-caption); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.journal-list { margin-top: 22px; }
+.journal-entry { padding: 20px 0; border-top: 1px solid var(--rule); }
+.journal-entry-title { display: flex; align-items: baseline; gap: 14px; }
+.journal-entry-title>span { color: var(--orange); font-size: var(--text-small); font-variant-numeric: tabular-nums; }
+.journal-entry h2 { font-size: var(--text-label); font-weight: var(--weight-medium); }
+.journal-entry>p { margin: 10px 0 16px; color: var(--text-secondary); font-size: var(--text-body); line-height: 1.8; max-width: 58ch; }
+.journal-entry-actions { display: flex; gap: 10px; }
+.journal-entry-actions button { font-size: var(--text-small); }
+@media (max-width: 800px) {
+  #app[data-screen="story"] .modal-backdrop { padding: 16px; }
+  #app[data-screen="story"] .dialog { padding: 20px; max-height: calc(100dvh - 32px); }
+  .story-conversation { grid-template-columns: 88px minmax(0, 1fr); align-items: start; gap: 18px; }
+  .story-portrait { align-self: start; }
+  .story-dialogue>p { font-size: 1.0625rem; }
+  .story-speaker { flex-wrap: wrap; gap: 4px 12px; }
+  .story-progress>span:last-child { display: none; }
+}

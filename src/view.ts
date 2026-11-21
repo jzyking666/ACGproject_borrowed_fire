@@ -23,7 +23,11 @@ export class View {
   mirrors = new Map<string, THREE.Group>(); receivers = new Map<string, THREE.Group>();
   pulseGroups = new Map<number, THREE.Group>();
   source = new THREE.Group(); exit = new THREE.Group(); ghost = new THREE.Group(); hintGhosts = new THREE.Group();
-  trajectory?: THREE.Line; floor?: THREE.Mesh; level?: Level;
+  trajectory?: THREE.LineSegments;
+  private plates = new Map<string, THREE.Group>();
+  private gates: THREE.Group[] = [];
+  private wells: THREE.Group[] = [];
+  private dust?: THREE.Points; floor?: THREE.Mesh; level?: Level;
   private robotBody!: THREE.Group; private arms: THREE.Group[] = [];
   private helmet = new THREE.Group(); private badge = new THREE.Group();
   private coat = metal(COATS[0].color, .65, .2);
@@ -121,16 +125,17 @@ export class View {
   private clear(group: THREE.Group) {
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
     group.traverse(o => {
-      if (o instanceof THREE.Mesh || o instanceof THREE.Line || o instanceof THREE.Sprite) {
+      if (o instanceof THREE.Mesh || o instanceof THREE.Line || o instanceof THREE.Sprite || o instanceof THREE.Points) {
         if (o.geometry && o.geometry !== boxGeo && o.geometry !== sphereGeo) geometries.add(o.geometry);
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         for (const mat of mats) if (![this.sourceLamp, this.exitLamp, this.cyan, this.orange, this.bodyMat, this.frameMat, this.silver].includes(mat)) materials.add(mat);
       }
     });
-    geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); group.clear();
+    geometries.forEach(g => g.dispose()); materials.forEach(m => { const map = (m as THREE.MeshBasicMaterial).map; if (map && map !== this.glowTexture && map !== this.deckTexture) map.dispose(); m.dispose(); }); group.clear();
   }
   load(level: Level) {
     this.level = level; this.clear(this.root); this.clear(this.dynamic); this.mirrors.clear(); this.receivers.clear(); this.pulseGroups.clear();
+    this.plates.clear(); this.gates = []; this.wells = []; this.sparkState = [];
     this.trajectory = undefined; this.lastPlayer.set(level.spawn.x, level.spawn.y); this.impulse.trauma = 0;
     const deck = new THREE.Shape(), w = 6.9, h = 4.9, rad = .45;
     deck.moveTo(-w + rad, -h); deck.lineTo(w - rad, -h); deck.quadraticCurveTo(w, -h, w, -h + rad);
@@ -138,7 +143,8 @@ export class View {
     deck.quadraticCurveTo(-w, h, -w, h - rad); deck.lineTo(-w, -h + rad); deck.quadraticCurveTo(-w, -h, -w + rad, -h);
     const slab = new THREE.Mesh(new THREE.ExtrudeGeometry(deck, { depth: .45, bevelEnabled: true, bevelSize: .09, bevelThickness: .08, bevelSegments: 2, steps: 1 }), this.frameMat);
     slab.rotation.x = -Math.PI / 2; slab.position.y = -.62; slab.receiveShadow = true; slab.castShadow = true; this.root.add(slab);
-    const floorMat = metal(0x29444a, .85, .25), altMat = metal(0x30494e, .8, .3), seamMat = metal(0x365057, .7);
+    const palette = level.theme === 'garden' ? [0x354b42, 0x40584b, 0x78947c] : level.theme === 'foundry' ? [0x514238, 0x605043, 0xae8754] : level.theme === 'archive' ? [0x343b54, 0x404963, 0x8897bd] : [0x29444a, 0x30494e, 0x365057];
+    const floorMat = metal(palette[0], .85, .25), altMat = metal(palette[1], .8, .3), seamMat = metal(palette[2], .7);
     floorMat.map = this.deckTexture; altMat.map = this.deckTexture;
     const borderMat = metal(0x30464c), darkMat = metal(0x101f26);
     for (let x = 0; x < level.width; x++) for (let y = 0; y < level.height; y++) {
@@ -179,7 +185,8 @@ export class View {
     this.exit.userData.doors = doors;
     for (const r of level.receivers) {
       const g = new THREE.Group(); g.position.copy(this.at(r));
-      const lamp = lit(C.teal, .08); g.userData.lamp = lamp;
+      const phaseColor = r.phase === 'cool' ? C.blue : r.phase === 'warm' ? C.amber : C.teal;
+      const lamp = lit(phaseColor, .08); g.userData.lamp = lamp;
       this.box(g, 0, .04, 0, .84, .08, .84, this.frameMat);
       this.ring(g, .31, .12, lamp, .048); this.ring(g, .2, .12, this.silver, .012);
       for (let i = 0; i < 4; i++) {
@@ -189,6 +196,7 @@ export class View {
       const rotor = new THREE.Group(); rotor.position.y = .15;
       for (let i = 0; i < 3; i++) { const vane = this.box(rotor, 0, 0, 0, .035, .025, .3, this.silver); vane.rotation.y = i * Math.PI / 3; }
       g.add(rotor); g.userData.rotor = rotor;
+      if (r.phase) { const badge = this.box(g, 0, .2, 0, .16, .025, .16, lit(phaseColor, .7)); badge.rotation.y = r.phase === 'cool' ? Math.PI / 4 : 0; }
       this.receivers.set(r.id, g); this.root.add(g);
     }
     if (level.delay) {
@@ -196,6 +204,8 @@ export class View {
       this.ring(g, .36, .14, this.orange, .05); this.ring(g, .22, .15, this.silver);
       this.box(g, 0, .06, 0, .85, .1, .85, this.bodyMat); this.root.add(g);
     }
+    this.buildMechanisms(level);
+    this.dressScene(level);
     this.ghost = this.mirror({ id: 'ghost', x: 0, y: 0, slash: true }, true); this.dynamic.add(this.ghost);
     this.hintGhosts = new THREE.Group();
     for (const mirror of level.solution) if (!mirror.fixed) this.hintGhosts.add(this.mirror(mirror, true));
@@ -207,6 +217,81 @@ export class View {
     }
     for (const x of [-5.5, 5.5]) this.box(this.root, x, -.9, 0, .3, .65, 6.2, this.bodyMat);
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), metal(0x15181b, .95, 0)); ground.rotation.x = -Math.PI / 2; ground.position.y = -1.3; ground.receiveShadow = true; this.root.add(ground);
+  }
+  private label(parent: THREE.Group, text: string, color: string, y = .7) {
+    const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 64;
+    const ctx = canvas.getContext('2d')!; ctx.fillStyle = '#172023'; ctx.fillRect(0, 0, 128, 64);
+    ctx.strokeStyle = color; ctx.lineWidth = 4; ctx.strokeRect(3, 3, 122, 58);
+    ctx.fillStyle = color; ctx.font = 'bold 38px "PingFang SC", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 64, 34);
+    const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map, depthWrite: false })); sprite.position.y = y; sprite.scale.set(.52, .26, 1); parent.add(sprite);
+  }
+  private buildMechanisms(level: Level) {
+    for (const plate of level.plates ?? []) {
+      const g = new THREE.Group(); g.position.copy(this.at(plate));
+      this.box(g, 0, .015, 0, .88, .06, .88, this.frameMat);
+      const top = this.box(g, 0, .09, 0, .66, .08, .66, lit(0xd8a35c, .2));
+      g.userData.top = top; this.label(g, plate.id, '#dfb377', .4);
+      this.root.add(g); this.plates.set(plate.id, g);
+    }
+    for (const gate of level.gates ?? []) {
+      const g = new THREE.Group(); g.position.copy(this.at(gate));
+      for (const x of [-.4, .4]) this.box(g, x, .5, 0, .09, 1, .15, this.silver);
+      const curtain = this.box(g, 0, .48, 0, .7, .85, .08, new THREE.MeshStandardMaterial({ color: C.red, emissive: C.red, emissiveIntensity: 1, transparent: true, opacity: .45 }));
+      g.userData.curtain = curtain; g.userData.plate = gate.plate;
+      this.label(g, gate.plate, '#dfb377', 1.15); this.root.add(g); this.gates.push(g);
+      const plate = level.plates!.find(p => p.id === gate.plate)!;
+      const a = this.at(plate, .01), b = this.at(gate, .01);
+      const wire = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, new THREE.Vector3(a.x, .01, b.z), b]), new THREE.LineDashedMaterial({ color: 0xc99853, dashSize: .12, gapSize: .1, transparent: true, opacity: .5 }));
+      wire.computeLineDistances(); this.root.add(wire);
+    }
+    for (const pair of level.portals ?? []) for (const c of [pair.a, pair.b]) {
+      const g = new THREE.Group(); g.position.copy(this.at(c));
+      this.box(g, 0, .02, 0, .82, .08, .82, this.frameMat);
+      this.ring(g, .34, .14, lit(0xb69cff, 1.3), .045);
+      const halo = this.ring(g, .27, .32, lit(0xc4b2ff, .8), .02); halo.rotation.x = -.9;
+      this.glow(g, 0x9a83f0, 1.1, .17); this.label(g, pair.id, '#c6b7ef', .82);
+      this.root.add(g); this.wells.push(g);
+    }
+    for (const c of level.inverters ?? []) {
+      const g = new THREE.Group(); g.position.copy(this.at(c));
+      this.box(g, 0, .025, 0, .78, .08, .78, this.bodyMat);
+      const left = this.box(g, -.14, .24, 0, .19, .3, .22, lit(C.amber, .8)); left.rotation.z = -.35;
+      const right = this.box(g, .14, .24, 0, .19, .3, .22, lit(C.blue, .8)); right.rotation.z = .35;
+      const diamond = this.box(g, 0, .48, 0, .17, .17, .07, this.silver); diamond.rotation.z = Math.PI / 4;
+      this.root.add(g);
+    }
+  }
+  private dressScene(level: Level) {
+    // Peripheral scenery never alters the playable collision map.
+    const theme = level.theme ?? (level.id < 3 ? 'archive' : level.id < 5 ? 'garden' : 'foundry');
+    const accent = theme === 'garden' ? 0x8ba783 : theme === 'foundry' ? 0xd9a05d : 0x8d9fc7;
+    const trim = metal(accent, .65, .35), dark = metal(0x20282c);
+    for (const sign of [-1, 1]) for (let i = 0; i < 4; i++) {
+      const x = sign * 6.7, z = -3 + i * 2;
+      if (theme === 'garden') {
+        this.box(this.root, x, -.02, z, .48, .35, 1.15, dark);
+        for (let j = 0; j < 4; j++) {
+          const leaf = this.box(this.root, x + Math.sin(j * 3.1) * .15, .27 + (j % 2) * .12, z - .35 + j * .23, .16, .46, .045, metal(j % 2 ? 0x769676 : 0x476b58, .9));
+          leaf.rotation.z = Math.sin(j * 2 + i) * .55;
+        }
+      } else if (theme === 'foundry') {
+        this.box(this.root, x, .1, z, .34, .65, .75, dark);
+        for (const dz of [-.2, 0, .2]) this.box(this.root, x, .47, z + dz, .24, .025, .045, trim);
+      } else {
+        this.box(this.root, x, .08, z, .42, .5, .95, dark);
+        for (let j = 0; j < 3; j++) this.box(this.root, x, .35 + j * .055, z, .37, .025, .8, j === 1 ? trim : this.silver);
+      }
+    }
+    for (let i = 0; i < 5; i++) {
+      this.box(this.root, -4.8 + i * 2.4, -.7, -5.05, 1.8, .12, .18, trim);
+      this.box(this.root, -4.8 + i * 2.4, -.72, 5.05, 1.8, .08, .12, dark);
+    }
+    const positions = new Float32Array(100 * 3);
+    for (let i = 0; i < 100; i++) { positions[i * 3] = Math.sin(i * 127.1) * 7; positions[i * 3 + 1] = .5 + ((i * 73) % 101) / 40; positions[i * 3 + 2] = Math.cos(i * 311.7) * 5; }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    this.dust = new THREE.Points(geo, new THREE.PointsMaterial({ color: accent, size: .025, transparent: true, opacity: .26, depthWrite: false })); this.root.add(this.dust);
+    const light = new THREE.PointLight(accent, 9, 13, 2); light.position.set(-4, 3, -3); this.root.add(light);
   }
   private buildRobot() {
     this.robotBody = new THREE.Group(); this.player.add(this.robotBody);
@@ -320,8 +405,10 @@ export class View {
     for (const r of sim.level.receivers) {
       const g = this.receivers.get(r.id)!, s = sim.receivers[r.id], lamp = g.userData.lamp as THREE.MeshStandardMaterial;
       lamp.emissiveIntensity = s.charge > 0 ? .7 + s.charge / r.ttl : .08;
-      lamp.color.setHex(s.charge > 0 ? C.teal : 0x35666b);
+      const phaseColor = r.phase === 'cool' ? C.blue : r.phase === 'warm' ? C.amber : C.teal;
+      lamp.emissive.setHex(phaseColor); lamp.color.setHex(s.charge > 0 || r.phase ? phaseColor : 0x35666b);
       (g.userData.glow as THREE.Sprite).visible = s.charge > 0;
+      ((g.userData.glow as THREE.Sprite).material as THREE.SpriteMaterial).color.setHex(phaseColor);
       if (s.charge > 0 && motion) (g.userData.rotor as THREE.Group).rotation.y += dt * 2.2;
     }
     this.sourceLamp.color.setHex(sim.sourceOn ? C.red : C.blue); this.sourceLamp.emissive.setHex(sim.sourceOn ? C.red : C.blue);
@@ -337,19 +424,33 @@ export class View {
       let g = this.pulseGroups.get(p.id);
       if (!g) {
         g = new THREE.Group(); this.ball(g, 0, .43, 0, .085, lit(0xffedc4, 3)); this.glow(g, C.amber, 1.2, .43);
-        const trail = this.box(g, 0, .43, 0, .35, .035, .035, this.orange); g.userData.trail = trail;
+        const trail = this.box(g, 0, .43, 0, .35, .035, .035, lit(C.amber, .8)); g.userData.trail = trail;
         this.dynamic.add(g); this.pulseGroups.set(p.id, g);
       }
+      const phaseColor = p.phase === 'cool' ? C.blue : C.amber;
+      const core = g.children[0] as THREE.Mesh; const coreMat = core.material as THREE.MeshStandardMaterial;
+      coreMat.color.setHex(phaseColor); coreMat.emissive.setHex(phaseColor);
+      ((g.children[1] as THREE.Sprite).material as THREE.SpriteMaterial).color.setHex(phaseColor);
       g.position.copy(this.at(p)); const trail = g.userData.trail as THREE.Mesh;
+      (trail.material as THREE.MeshStandardMaterial).color.setHex(phaseColor); (trail.material as THREE.MeshStandardMaterial).emissive.setHex(phaseColor);
       trail.rotation.y = -Math.atan2(p.dy, p.dx); trail.position.x = -p.dx * .19; trail.position.z = -p.dy * .19;
       g.scale.setScalar(p.wait > 0 && motion ? 1 + Math.sin(this.clock * 9) * .15 : 1);
     }
     if (this.trajectory && (!observe || menu)) { this.dynamic.remove(this.trajectory); this.trajectory.geometry.dispose(); (this.trajectory.material as THREE.Material).dispose(); this.trajectory = undefined; }
     if (observe && !menu && !this.trajectory) {
-      const points = sim.trace().map(p => this.at(p, .16));
-      this.trajectory = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineDashedMaterial({ color: C.teal, dashSize: .14, gapSize: .12, transparent: true, opacity: .55 }));
+      const route = sim.trace(), points: THREE.Vector3[] = [];
+      for (let i = 1; i < route.length; i++) if (!route[i].jump) points.push(this.at(route[i - 1], .16), this.at(route[i], .16));
+      this.trajectory = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineDashedMaterial({ color: C.teal, dashSize: .14, gapSize: .12, transparent: true, opacity: .55 }));
       this.trajectory.computeLineDistances(); this.dynamic.add(this.trajectory);
     }
+    for (const [id, g] of this.plates) {
+      const top = g.userData.top as THREE.Mesh; const active = sim.plateActive(id);
+      top.position.y = active ? .04 : .09;
+      (top.material as THREE.MeshStandardMaterial).emissiveIntensity = active ? 1.1 : .2;
+    }
+    for (const g of this.gates) (g.userData.curtain as THREE.Mesh).scale.y = sim.plateActive(g.userData.plate) ? .025 : 1;
+    if (motion) this.wells.forEach((g, i) => { (g.children[2] as THREE.Mesh).rotation.z = this.clock * .65 * (i % 2 ? -1 : 1); });
+    if (this.dust) { this.dust.visible = motion; if (motion) this.dust.position.y = Math.sin(this.clock * .16) * .15; }
     const offset = this.impulse.sample(dt, !motion || menu || wardrobe);
     if (this.impulse.trauma > 0) this.camera.setViewOffset(this.width, this.height, offset.x, offset.y, this.width, this.height);
     else this.camera.clearViewOffset();

@@ -158,7 +158,7 @@ test('受击返回起点，保留布局并暂时免伤', () => {
 test('损坏、越界、错误版本及未知形状的存档安全降级', () => {
   assert.equal(parseSave('{broken').unlocked, 0);
   assert.equal(parseSave('{"version":99}').unlocked, 0);
-  assert.equal(parseSave('{"version":1,"unlocked":1000}').unlocked, 6);
+  assert.equal(parseSave('{"version":1,"unlocked":1000}').unlocked, LEVELS.length - 1);
   const saved = new Simulation(LEVELS[0]).snapshot();
   assert.equal(validSnapshot({ ...saved, player: { x: Infinity, y: 2 } }), false);
   assert.equal(validSnapshot({ ...saved, mirrors: [] }), false);

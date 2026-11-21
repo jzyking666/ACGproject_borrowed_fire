@@ -1,6 +1,7 @@
 export type Cell = { x: number; y: number };
 export type Mirror = Cell & { id: string; slash: boolean; fixed?: boolean };
-export type Receiver = Cell & { id: string; name: string; ttl: number };
+export type Phase = 'warm' | 'cool';
+export type Receiver = Cell & { id: string; name: string; ttl: number; phase?: Phase };
 export interface Level {
   id: number; name: string; subtitle: string; briefing: string; lesson: string;
   width: number; height: number; spawn: Cell; exit: Cell;
@@ -8,6 +9,11 @@ export interface Level {
   mirrors: Mirror[]; receivers: Receiver[]; walls: Cell[];
   delay?: Cell; repeats: number; offGrid?: boolean; par: number;
   solution: Mirror[]; hints: string[];
+  theme?: 'foundry' | 'garden' | 'archive';
+  plates?: (Cell & { id: string })[];
+  gates?: (Cell & { plate: string })[];
+  portals?: { id: string; a: Cell; b: Cell }[];
+  inverters?: Cell[];
 }
 const m = (id: string, x: number, y: number, slash: boolean, fixed = false): Mirror => ({ id, x, y, slash, fixed });
 const r = (id: string, x: number, y: number, name: string, ttl = 8): Receiver => ({ id, x, y, name, ttl });
@@ -95,3 +101,62 @@ export const LEVELS: Level[] = [
     hints: ['并非所有循环都是矩形。让光绕过隔墙，形成一个凹进去的环。', '右侧路线从底部向上，到隔墙下方后折向左，再向上。', '六个轮廓展示了一种解法。注意中间连续的两面反射器都是 \\。完成后关闭发射器。'],
   },
 ];
+
+// Relay wing: freely accessible experiments; original level identifiers stay stable for old saves.
+const relayLoop = () => [m('a', 2, 1, true), m('b', 6, 1, false), m('c', 10, 6, true), m('d', 2, 6, false)];
+const relayStart = () => [m('a', 3, 4, false), m('b', 5, 4, true), m('c', 9, 5, false), m('d', 3, 5, true)];
+const partition = () => Array.from({ length: 11 }, (_, i) => ({ x: i + 1, y: 3 })).filter(c => c.x !== 2);
+const well = () => [{ id: 'A', a: { x: 10, y: 4 }, b: { x: 6, y: 2 } }];
+LEVELS.push(
+  {
+    id: 7, name: '留下一个人', subtitle: '08 / THE ANCHOR', theme: 'foundry',
+    briefing: '光闸只认压板，不认工牌。你可以站上去，也可以找一件愿意替你值班的重物。',
+    lesson: '人或放下的反射器都能压住压板。对应光闸只拦脉冲，人可以穿过。Z 撤销上次装置操作。',
+    width: 13, height: 9, spawn: { x: 4, y: 6 }, exit: { x: 11, y: 2 }, source: { x: 2, y: 5, dx: 1, dy: 0 },
+    mirrors: [m('a', 5, 6, false), m('b', 4, 4, true)], receivers: [r('gate', 8, 2, '出口供电', 10)],
+    walls: [{ x: 10, y: 4 }, { x: 10, y: 5 }], plates: [{ id: 'I', x: 4, y: 3 }], gates: [{ plate: 'I', x: 3, y: 5 }],
+    repeats: 1, par: 65, solution: [m('a', 8, 5, true), m('b', 4, 3, false)],
+    hints: ['压住 I 号压板，I 号光闸就会放行。', '反射器除了改变光路，也有重量。', '一面镜压住 (4,3) 的压板，另一面镜放在 (8,5)，方向 /。'],
+  },
+  {
+    id: 8, name: '隔墙有耳', subtitle: '09 / FOLDED SPACE', theme: 'archive',
+    briefing: '两个导光井之间没有走廊。对光来说，这不是问题。',
+    lesson: '同字母导光井成对传送脉冲，方向和身份保持不变；它们不传送维修员。',
+    width: 13, height: 9, spawn: { x: 5, y: 5 }, exit: { x: 11, y: 1 }, source: { x: 4, y: 6, dx: 1, dy: 0 },
+    mirrors: relayStart(), receivers: [r('top', 4, 1, '远端通讯'), r('bottom', 7, 6, '底层中继')],
+    walls: partition(), portals: well(), repeats: 2, par: 120, solution: relayLoop(),
+    hints: ['不要尝试让人穿过导光井。先观察光从另一端出来后的方向。', '右下角折向上方后，光会从上方的井继续向上。', '四角依次是 (2,1) /、(6,1) \\、(10,6) /、(2,6) \\。'],
+  },
+  {
+    id: 9, name: '冷暖之间', subtitle: '10 / PHASE GARDEN', theme: 'garden',
+    briefing: '温室要冷光，旧电梯要暖光。这里没有第二台发射器。',
+    lesson: '菱形换相器将暖光与冷光互换。带冷／暖标记的接收环只接收对应脉冲。',
+    width: 13, height: 9, spawn: { x: 5, y: 5 }, exit: { x: 11, y: 2 }, source: { x: 4, y: 6, dx: 1, dy: 0 },
+    mirrors: relayStart(), receivers: [{ ...r('cold', 10, 4, '冷却泵'), phase: 'cool' }, { ...r('warm', 4, 2, '恒温电梯'), phase: 'warm' }],
+    walls: [{ x: 6, y: 3 }, { x: 6, y: 4 }, { x: 6, y: 5 }], inverters: [{ x: 7, y: 6 }, { x: 7, y: 2 }],
+    repeats: 2, par: 125, solution: rect(),
+    hints: ['颜色不对的脉冲会穿过接收环，但不会供电。', '沿回路经过两次换相，脉冲才会恢复出发时的颜色。', '四角放在 (2,2)、(10,2)、(10,6)、(2,6)，依次 /、\\、/、\\。'],
+  },
+  {
+    id: 10, name: '无人值守', subtitle: '11 / UNATTENDED', theme: 'foundry',
+    briefing: '回路能运行，不代表你能走。把自己的岗位交出去，再去开门。',
+    lesson: '组合导光井与压板：离开压板后仍需保持闭环。找出哪一面反射器可以充当压舱物。',
+    width: 13, height: 9, spawn: { x: 5, y: 5 }, exit: { x: 11, y: 1 }, source: { x: 4, y: 6, dx: 1, dy: 0 },
+    mirrors: [...relayStart(), m('e', 8, 5, true)], receivers: [r('top', 3, 1, '远端电梯'), r('bottom', 7, 6, '出口供电')],
+    walls: partition(), portals: well(), plates: [{ id: 'I', x: 8, y: 4 }], gates: [{ plate: 'I', x: 5, y: 6 }],
+    repeats: 2, par: 150, solution: [...relayLoop(), m('e', 8, 4, false)],
+    hints: ['第五面反射器不一定要在光路上。', '先维持压板，再通过导光井接成远端回路。', '四个转角与隔墙有耳相同；额外反射器放在 (8,4) 压板上。'],
+  },
+  {
+    id: 11, name: '把夜晚折起来', subtitle: '12 / NIGHT RELAY', theme: 'garden',
+    briefing: '让一颗光穿过两个空间、两种温度和一道锁。等它自己学会回家，你就可以下班了。',
+    lesson: '冷暖换相、导光井与压板光闸组合。三环完成循环验证后，关闭发射器并离开。',
+    width: 13, height: 9, spawn: { x: 5, y: 5 }, exit: { x: 11, y: 1 }, source: { x: 4, y: 6, dx: 1, dy: 0 },
+    mirrors: [...relayStart(), m('e', 8, 5, true)],
+    receivers: [{ ...r('cold', 5, 1, '夜间温室'), phase: 'cool' }, { ...r('warm', 2, 4, '通讯信标'), phase: 'warm' }, r('bottom', 6, 6, '离网中继')],
+    walls: partition(), portals: well(), plates: [{ id: 'I', x: 8, y: 4 }], gates: [{ plate: 'I', x: 5, y: 6 }],
+    inverters: [{ x: 7, y: 6 }, { x: 4, y: 1 }], repeats: 2, offGrid: true, par: 180,
+    solution: [...relayLoop(), m('e', 8, 4, false)],
+    hints: ['先看清颜色的顺序，再考虑如何离网。', '顶部接收冷光；左侧接收暖光。压板必须有人或反射器持续占据。', '四角沿用导光井回路，额外镜压住 (8,4)。循环验证完成后关闭发射器。'],
+  },
+);

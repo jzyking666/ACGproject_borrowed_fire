@@ -1,5 +1,15 @@
 import { test, expect } from '@playwright/test';
 
+// Gameplay smoke checks run with automatic dialogue disabled; story.spec exercises the narrative flow.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    const key = 'borrowed-fire.save.v1';
+    const save = JSON.parse(localStorage.getItem(key) ?? '{"version":1}');
+    save.settings = { ...save.settings, dialogue: false };
+    localStorage.setItem(key, JSON.stringify(save));
+  });
+});
+
 test('主菜单、三维场景、移动、观察、提示与断点恢复', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
   await page.goto('/');
@@ -101,4 +111,27 @@ test('未解锁关卡不可进入，设置在重新加载后保留', async ({ pa
   await page.getByRole('button', { name: '设置与操作' }).click();
   await page.locator('.settings-list [data-action="sound"]').click();
   await page.reload(); await expect(page.locator('#sound-btn')).toHaveText('声音 关');
+});
+
+
+test('中继站可直接进入，撤销恢复装置，新机房可自由选择', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/'); await page.getByRole('button', { name: '中继站 · 新章节' }).click();
+  await expect(page.locator('#room-name')).toHaveText('留下一个人');
+  await expect(page.locator('#mechanic-status')).toContainText('光闸关闭');
+  await page.keyboard.press('KeyE');
+  await expect.poll(() => page.evaluate(() => (window as any).__borrowedFire.undoDepth)).toBe(1);
+  await expect(page.locator('#undo-button')).toBeEnabled();
+  await page.keyboard.press('KeyZ');
+  await expect.poll(() => page.evaluate(() => (window as any).__borrowedFire.carried)).toBe(null);
+  await expect(page.locator('#undo-button')).toBeDisabled();
+  await page.screenshot({ path: 'test-results/relay-foundry.png' });
+  await page.keyboard.press('Escape'); await page.getByRole('button', { name: '选择机房', exact: true }).click();
+  await expect(page.locator('[data-level="1"]')).toBeDisabled();
+  await expect(page.locator('[data-level="11"]')).toBeEnabled();
+  await page.locator('[data-level="9"]').click();
+  await expect(page.locator('#room-name')).toHaveText('冷暖之间');
+  await expect(page.locator('.phase-badge')).toHaveCount(2);
+  await page.screenshot({ path: 'test-results/relay-garden.png' });
+  expect(errors).toEqual([]);
 });

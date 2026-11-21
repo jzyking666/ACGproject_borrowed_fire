@@ -5,6 +5,8 @@ import { View } from './view';
 import { Sound } from './audio';
 import { defaults, exportSave, importSave, parseSave, STORAGE_KEY, type SaveData } from './storage';
 import { BADGES, COATS, HELMETS } from './appearance';
+import { STORY, CAST, StoryPlayer, sceneFor, availableScenes, portrait, type Scene } from './story';
+import { History } from './history';
 import { Controller } from './controller';
 import { menuMarkup, ROOT_MARKUP } from './ui';
 
@@ -27,11 +29,13 @@ function boot() {
   for (let i = 0; i < 150; i++) sim.step(.1, false);
   view.load(sim.level);
   let screen = 'menu', observe = false, hintCount = 0, hasRun = false, photoDof = true, usingPad = false;
+  let activeStory: { player: StoryPlayer; replay: boolean; finish: () => void } | undefined;
   let pendingImport: SaveData | undefined;
   const modalHistory: string[] = [];
   let toastTimer = 0, hudTimer = 0, autoTimer = 0, saveWarning = false;
   const keys = new Set<string>(); let cameraDrag = false, previousX = 0;
   const controller = new Controller();
+  const history = new History();
   let lastTime = performance.now(), frameCount = 0;
   const toast = (message: string) => { $('toast').textContent = message; $('toast').classList.add('show'); toastTimer = 3.5; };
   const persist = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch { if (!saveWarning) { saveWarning = true; toast('浏览器未允许本地存档；本次仍可游玩。'); } } };
@@ -41,18 +45,18 @@ function boot() {
   const setScreen = (value: string) => {
     screen = value; keys.clear(); app.dataset.screen = value || 'playing';
     $('overlay').className = `overlay ${value === '' ? 'closed' : value === 'menu' ? 'home' : value === 'photo' ? 'photo-overlay' : 'modal-backdrop'}`;
-    $('hud').hidden = !hasRun || value === 'menu' || value === 'photo' || value === 'wardrobe';
+    $('hud').hidden = !hasRun || value === 'menu' || value === 'photo' || value === 'wardrobe' || value === 'story';
     $('pause-btn').hidden = value === 'menu';
     view.setPresentation(value === 'menu' ? 'menu' : value === 'wardrobe' ? 'wardrobe' : 'game');
   };
   const button = (action: string, label: string, cls = 'secondary') => `<button class="${cls}" data-action="${action}">${label}</button>`;
   function menu() {
-    if (hasRun && !sim.won) checkpoint(); modalHistory.length = 0; setScreen('menu');
+    if (hasRun && !sim.won) checkpoint(); activeStory = undefined; modalHistory.length = 0; setScreen('menu');
     $('sound-btn').textContent = `声音 ${data.settings.muted ? '关' : '开'}`;
     $('overlay').innerHTML = menuMarkup(data);
   }
   function load(id: number, restore = false) {
-    sound.unlock(); sim = new Simulation(LEVELS[id]); hintCount = 0;
+    sound.unlock(); activeStory = undefined; history.clear(); sim = new Simulation(LEVELS[id]); hintCount = 0;
     if (restore && data.checkpoint?.level === id) { sim.restore(data.checkpoint); hintCount = data.hintCount ?? 0; }
     hasRun = true; observe = false; autoTimer = 0; modalHistory.length = 0; view.load(sim.level); view.resetCamera();
     $('room-index').textContent = String(id + 1).padStart(2, '0');
@@ -63,43 +67,73 @@ function boot() {
     $('hint-text').hidden = hintCount === 0; $('hint-text').textContent = sim.level.hints[Math.max(0, hintCount - 1)];
     $('briefing').hidden = hintCount === 0;
     $('world-labels').innerHTML = sim.level.receivers.map((r, i) => `<span data-receiver="${r.id}" class="world-label"><b>${i + 1}</b><span>${r.name}</span></span>`).join('');
+    const intro = sceneFor(id, 'before'), firstVisit = !data.story.seen.includes(intro.id);
+    if (firstVisit) data.story.seen.push(intro.id);
     setScreen(''); $('overlay').innerHTML = ''; updateHud(); checkpoint();
     toast(restore ? '夜班断点已恢复' : `进入机房 ${String(id + 1).padStart(2, '0')} · ${sim.level.name}`);
+    if (!restore && data.settings.dialogue && !data.records[id] && firstVisit) playStory(intro, resumeGame);
   }
   function modal(title: string, body: string, footer: string, kind = 'dialog') {
     const focusedAction = screen === kind ? (document.activeElement as HTMLElement | null)?.dataset.action : undefined;
     const scrollTop = screen === kind ? $('overlay').querySelector('.dialog-body')?.scrollTop ?? 0 : 0;
     if (screen !== kind) modalHistory.push(screen);
-    const closeAction = kind === 'pause' ? 'resume' : kind === 'win' ? 'menu' : 'back';
+    const closeAction = kind === 'pause' ? 'resume' : kind === 'win' ? 'menu' : kind === 'story' ? 'story-skip' : 'back';
     setScreen(kind); $('overlay').innerHTML = `<section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><header class="dialog-heading"><div><p class="dialog-context">第七区维修组</p><h1 id="dialog-title">${title}</h1></div><button class="dialog-close" data-action="${closeAction}" aria-label="关闭${title}">×</button></header><div class="dialog-body">${body}</div><footer class="dialog-actions">${footer}</footer></section>`;
     const dialogBody = $('overlay').querySelector<HTMLElement>('.dialog-body')!;
     requestAnimationFrame(() => {
       if (!dialogBody.isConnected) return;
       const buttons = [...$('overlay').querySelectorAll<HTMLButtonElement>('button:not(:disabled):not(.dialog-close)')];
-      const primary = kind === 'pause' || kind === 'win' ? $('overlay').querySelector<HTMLButtonElement>('.dialog-actions .primary') : null;
+      const primary = kind === 'pause' || kind === 'win' || kind === 'story' ? $('overlay').querySelector<HTMLButtonElement>('.dialog-actions .primary') : null;
       const focused = buttons.find(b => focusedAction && b.dataset.action === focusedAction) ?? primary ?? buttons[0];
       dialogBody.scrollTop = scrollTop;
       focused?.focus({ preventScroll: true });
     });
   }
+  function resumeGame() { setScreen(''); $('overlay').innerHTML = ''; }
+  function playStory(scene: Scene, finish: () => void, replay = false) {
+    const depth = modalHistory.length;
+    if (!data.story.seen.includes(scene.id)) { data.story.seen.push(scene.id); persist(); }
+    activeStory = { player: new StoryPlayer(scene), replay, finish: () => { modalHistory.length = depth; finish(); } };
+    renderStory();
+  }
+  function renderStory() {
+    if (!activeStory) return;
+    const player = activeStory.player, scene = player.scene, cast = CAST[player.line.speaker];
+    const previous = `<button class="secondary" data-action="story-prev" ${player.index === 0 ? 'disabled' : ''}>上一句</button>`;
+    modal(scene.title, `<div class="story-location">${scene.level < 7 ? '第一班 · 主机房' : '第二班 · 中继站'} / ${LEVELS[scene.level].name} / ${scene.kind === 'before' ? '入场通讯' : '完工通讯'}</div><div class="story-conversation" style="--speaker-color:${cast.color}"><div class="story-portrait">${portrait(player.line.speaker)}</div><div class="story-dialogue"><div class="story-speaker"><b>${cast.name}</b><span>${cast.role}</span></div><p id="story-text" aria-live="polite" aria-atomic="true"></p></div></div><div class="story-progress"><span>${player.index + 1} / ${scene.lines.length}</span><span>空格 / Enter / 手柄 A 继续 · Esc / B 跳过</span></div>`, previous + button('story-skip', '跳过对话') + button('story-next', player.last ? activeStory.replay ? '返回通讯' : scene.kind === 'before' ? '开始维修' : '查看结果' : '下一句', 'primary'), 'story');
+    $('story-text').textContent = player.line.text;
+  }
+  function finishStory() {
+    if (!activeStory) return;
+    const finish = activeStory.finish; activeStory = undefined; finish();
+  }
+  function journal() {
+    if (screen === '') checkpoint();
+    const scenes = availableScenes(data.story.seen, data.records);
+    const rows = STORY.map((beat, i) => {
+      const before = scenes.some(s => s.level === i && s.kind === 'before'), after = scenes.some(s => s.level === i && s.kind === 'after');
+      return `<section class="journal-entry"><div class="journal-entry-title"><span>${String(i + 1).padStart(2, '0')}</span><h2>${before || after ? beat.title : '尚无通讯'}</h2></div><p>${data.records[i] ? beat.record : before || after ? '已收录入场通讯，完工后补入交接记录。' : '进入对应机房后收录。'}</p><div class="journal-entry-actions"><button class="secondary" data-action="replay-${i}-before" ${before ? '' : 'disabled'}>入场通讯</button><button class="secondary" data-action="replay-${i}-after" ${after ? '' : 'disabled'}>完工通讯</button></div></section>`;
+    }).join('');
+    modal('夜班通讯', `<p class="dialog-copy">已收录的对话可以随时回看。跳过对话不影响维修与星级。</p><div class="journal-list">${rows}</div>`, button('back', '返回', 'primary'), 'journal');
+  }
   function pause() {
     if (!hasRun || sim.won) return; checkpoint();
-    modal('暂停', `<p class="dialog-copy">当前进度已自动保存。</p><nav class="pause-menu" aria-label="暂停选项">${button('saves', '存档管理')}${button('ledger', '工单')}${button('wardrobe', '维修员')}${button('photo', '拍照')}${button('settings', '设置')}${button('levels', '选择机房')}</nav>`, button('menu', '返回主菜单') + button('resume', '继续', 'primary'), 'pause');
+    modal('暂停', `<p class="dialog-copy">当前进度已自动保存。</p><nav class="pause-menu" aria-label="暂停选项">${button('journal', '夜班通讯')}${button('saves', '存档管理')}${button('ledger', '工单')}${button('wardrobe', '维修员')}${button('photo', '拍照')}${button('settings', '设置')}${button('levels', '选择机房')}</nav>`, button('menu', '返回主菜单') + button('resume', '继续', 'primary'), 'pause');
   }
   function levels() {
     if (screen === '') checkpoint();
     const cards = LEVELS.map((l, i) => {
-      const rec = data.records[i], unlocked = i <= data.unlocked;
-      return `<button class="level-card ${unlocked ? '' : 'locked'}" data-level="${i}" ${unlocked ? '' : 'disabled'}><span class="level-num">${String(i + 1).padStart(2, '0')}</span><span><strong>${l.name}</strong><small>${unlocked ? l.offGrid ? '循环供电 · 关闭发射器' : l.repeats > 1 ? '循环供电' : '基础维修' : '完成上一机房后解锁'}</small></span>${rec ? stars(rec.stars) : `<span class="level-lock">${unlocked ? '进入' : '未解锁'}</span>`}</button>`;
+      const rec = data.records[i], unlocked = i >= 7 || i <= data.unlocked;
+      return `${i === 0 || i === 7 ? `<h2 class="chapter-heading">${i === 0 ? "第一班 · 机房" : "第二班 · 中继站（自由选关）"}</h2>` : ""}<button class="level-card ${unlocked ? '' : 'locked'}" data-level="${i}" ${unlocked ? '' : 'disabled'}><span class="level-num">${String(i + 1).padStart(2, '0')}</span><span><strong>${l.name}</strong><small>${unlocked ? l.offGrid ? '循环供电 · 关闭发射器' : l.repeats > 1 ? '循环供电' : '基础维修' : '完成上一机房后解锁'}</small></span>${rec ? stars(rec.stars) : `<span class="level-lock">${unlocked ? '进入' : '未解锁'}</span>`}</button>`;
     }).join('');
-    modal('选择机房', `<div class="level-grid">${cards}</div>`, button('back', '返回'), 'levels');
+    modal('选择机房', `<div class="level-grid">${cards}</div>`, button('journal', '夜班通讯') + button('back', '返回'), 'levels');
   }
   function settings() {
     const row = (action: string, name: string, help: string, value: string) => `<button data-action="${action}"><span class="setting-label">${name}<small>${help}</small></span><span class="setting-value">${value}<span aria-hidden="true">›</span></span></button>`;
     const group = (title: string, rows: string) => `<section class="settings-section"><h2>${title}</h2>${rows}</section>`;
     const audio = row('sound', '声音开关', '控制所有游戏声音', data.settings.muted ? '关' : '开') + row('volume', '音量', '每次调整 10%', `${Math.round(data.settings.volume * 100)}%`) + row('music', '背景音乐', '配乐随设备供电状态变化', data.settings.music ? '开' : '关');
     const graphics = row('quality', '高画质', '关闭后降低耗电，并停用辉光与景深', data.settings.highQuality ? '开' : '关') + row('environment', '环境照明', '显示金属表面的环境反射', data.settings.environment ? '开' : '关') + row('dof', '游戏景深', '焦点跟随角色；关闭时全场保持清晰', data.settings.depthOfField ? data.settings.highQuality ? '开' : '低画质停用' : '关');
-    const reading = row('motion', '减少动态效果', '关闭相机震动和角色浮动', data.settings.reducedMotion ? '开' : '关') + row('text-size', '文字大小', '调整界面文字与操作说明', `${Math.round(data.settings.textScale * 100)}%`);
+    const reading = row('dialogue', '自动播放剧情', '首次进入与首次完工时播放；可在夜班通讯回看', data.settings.dialogue ? '开' : '关') + row('motion', '减少动态效果', '关闭相机震动和角色浮动', data.settings.reducedMotion ? '开' : '关') + row('text-size', '文字大小', '调整界面文字与操作说明', `${Math.round(data.settings.textScale * 100)}%`);
     modal('设置', `<div class="settings-list">${group('声音', audio)}${group('画面', graphics)}${group('操作与阅读', reading)}</div><p class="dialog-copy">${navigator.getGamepads?.().some(p => p?.mapping === 'standard') ? '已连接手柄。' : '手柄未连接。连接后按任意键激活。'}</p>`, button('help', '操作指南') + button('back', '返回', 'primary'), 'settings');
   }
   function help() {
@@ -107,14 +141,14 @@ function boot() {
     const keyboard = bindings([
       ['<kbd>WASD</kbd> / 方向键', '移动'], ['<kbd>E</kbd>', '拿取、放下；切换附近发射器'], ['<kbd>Q</kbd>', '旋转手持或附近反射器'],
       ['<kbd>Space</kbd>', '观察：暂停并预览弹道'], ['<kbd>Shift</kbd> + 移动', '精细移动'], ['<kbd>H</kbd>', '分步提示；第三步显示参考轮廓'],
-      ['<kbd>R</kbd> / <kbd>Esc</kbd>', '重试 / 暂停'], ['<kbd>I</kbd> / <kbd>J</kbd>', '维修工单 / 存档'], ['<kbd>F2</kbd>', '拍照与图片导出'],
+      ['<kbd>R</kbd> / <kbd>Esc</kbd>', '重试 / 暂停'], ['<kbd>I</kbd> / <kbd>J</kbd>', '维修工单 / 存档'], ['<kbd>F2</kbd>', '拍照与图片导出'], ['<kbd>Z</kbd> / 手柄 LB', '撤销上次装置操作'],
       ['右键 / 滚轮', '转动相机 / 缩放'], ['<kbd>C</kbd>', '相机复位'],
     ]);
     const gamepad = bindings([
       ['左摇杆 / 方向键', '移动'], ['<kbd>A</kbd> / 下方键', '拿取、放下'], ['<kbd>B</kbd> / 右方键', '旋转'], ['<kbd>X</kbd> / 左方键', '观察'],
       ['<kbd>Y</kbd> / 上方键', '提示'], ['右摇杆', '调整视角与缩放'], ['<kbd>Start</kbd>', '暂停、继续'], ['菜单方向键', '选择选项；A 确认，B 返回'],
     ]);
-    modal('值班手册', `<div class="help-grid"><section><h2>键盘与鼠标</h2>${keyboard}</section><section><h2>实体手柄</h2>${gamepad}<p class="dialog-copy">首次连接后按任意键激活。支持浏览器标准映射手柄。</p></section></div><section class="manual-note"><h2>维修准则</h2><p>接收环需要定期补充电力。后续机房要求同一颗脉冲重复经过；超时会失去循环验证。关闭发射器不会清除已有脉冲。受击会返回起点，但保留你搭建的装置。</p><p>完成目标后，空手进入青色出口。每关一颗完成星，另两颗分别奖励无伤、未使用提示。提示不影响解锁。</p></section>`, button('back', '知道了', 'primary'), 'help');
+    modal('值班手册', `<div class="help-grid"><section><h2>键盘与鼠标</h2>${keyboard}</section><section><h2>实体手柄</h2>${gamepad}<p class="dialog-copy">首次连接后按任意键激活。支持浏览器标准映射手柄。</p></section></div><section class="manual-note"><h2>中继站装置</h2><p>压板可以由人或放下的反射器占据，对应光闸只拦脉冲。成对的导光井传送脉冲，保持方向和身份，不传送人。菱形换相器互换冷暖属性；接收环只接受对应颜色。Z / 手柄 LB 撤销装置操作和当时的完整回路状态。</p><h2>维修准则</h2><p>接收环需要定期补充电力。后续机房要求同一颗脉冲重复经过；超时会失去循环验证。关闭发射器不会清除已有脉冲。受击会返回起点，但保留你搭建的装置。</p><p>完成目标后，空手进入青色出口。每关一颗完成星，另两颗分别奖励无伤、未使用提示。提示不影响解锁。</p></section>`, button('back', '知道了', 'primary'), 'help');
   }
   function hint() {
     if (!hasRun || screen !== '') return;
@@ -124,10 +158,15 @@ function boot() {
   function complete() {
     const n = 1 + Number(sim.hits === 0) + Number(hintCount === 0), rec = data.records[sim.level.id];
     if (!rec || n > rec.stars || n === rec.stars && sim.elapsed < rec.seconds) data.records[sim.level.id] = { stars: n, seconds: sim.elapsed, hits: sim.hits, moves: sim.moves };
-    data.unlocked = Math.max(data.unlocked, Math.min(LEVELS.length - 1, sim.level.id + 1));
+    if (sim.level.id < 7) data.unlocked = Math.max(data.unlocked, Math.min(6, sim.level.id + 1));
     delete data.checkpoint; delete data.hintCount; persist();
+    const scene = sceneFor(sim.level.id, 'after');
+    if (!rec && data.settings.dialogue && !data.story.seen.includes(scene.id)) playStory(scene, () => showResult(n));
+    else showResult(n);
+  }
+  function showResult(n: number) {
     const last = sim.level.id === LEVELS.length - 1;
-    modal(last ? '夜班完成' : '维修完成', `<div class="result-stars">${stars(n)}</div><p class="dialog-copy">${last ? '七间机房已恢复供电。夜班结束。' : `${sim.level.name} · 设备运行正常。`}</p><div class="result-stats"><div><b>${fmt(sim.elapsed)}</b><span>维修用时</span></div><div><b>${sim.hits}</b><span>受击次数</span></div><div><b>${sim.moves}</b><span>装置操作</span></div></div><p class="result-note">完成 ★ · 无伤 ${sim.hits === 0 ? '★' : '☆'} · 未使用提示 ${hintCount === 0 ? '★' : '☆'}</p>`, (last ? button('levels', '夜班记录', 'primary') : button('next', '下一间机房', 'primary')) + button('restart', '重新维修') + button('menu', '返回主菜单'), 'win');
+    modal(last ? '收件人' : sim.level.id === 6 ? '第一班交接完成' : '维修完成', `<div class="result-stars">${stars(n)}</div><p class="dialog-copy">${last ? '回执已送达。有人接过了这条线路，也有人等你下班。' : `${sim.level.name} · 设备运行正常。`}</p><div class="result-stats"><div><b>${fmt(sim.elapsed)}</b><span>维修用时</span></div><div><b>${sim.hits}</b><span>受击次数</span></div><div><b>${sim.moves}</b><span>装置操作</span></div></div><p class="result-note">完成 ★ · 无伤 ${sim.hits === 0 ? '★' : '☆'} · 未使用提示 ${hintCount === 0 ? '★' : '☆'}</p>`, (last ? button('levels', '夜班记录', 'primary') : button('next', '下一间机房', 'primary')) + button('journal', '夜班通讯') + button('restart', '重新维修') + button('menu', '返回主菜单'), 'win');
   }
   function wardrobe() {
     const choices = (group: string, values: readonly string[], selected: number) => values.map((name, i) => `<button data-action="${group}-${i}" aria-pressed="${selected === i}" class="choice ${selected === i ? 'chosen' : ''}">${name}</button>`).join('');
@@ -144,7 +183,7 @@ function boot() {
     if (screen === '') checkpoint();
     const current = hasRun ? `<section class="work-order"><h2>${String(sim.level.id + 1).padStart(2, '0')} ${sim.level.name}</h2><p>${sim.level.lesson}</p><ul>${sim.level.receivers.map(r => `<li><span>${r.name}</span><b>${sim.receivers[r.id].charge > 0 ? `${Math.min(sim.receivers[r.id].hits, sim.level.repeats)} / ${sim.level.repeats} 次` : '待供电'}</b></li>`).join('')}${sim.level.offGrid ? `<li><span>发射器离网</span><b>${sim.sourceOn ? '待关闭' : '已关闭'}</b></li>` : ''}</ul></section>` : '<p class="dialog-copy">进入机房后，这里会显示当前维修任务。</p>';
     const records = LEVELS.map(l => { const r = data.records[l.id]; return `<tr><td>${String(l.id + 1).padStart(2, '0')}</td><th>${l.name}</th><td>${r ? fmt(r.seconds) : '—'}</td><td>${r ? stars(r.stars) : '未完成'}</td></tr>`; }).join('');
-    modal('维修工单', `${current}<h2 class="section-title">夜班记录</h2><table class="record-table"><thead><tr><th>机房</th><th>任务</th><th>最佳时间</th><th>记录</th></tr></thead><tbody>${records}</tbody></table>`, button('help', '操作指南') + button('back', '返回', 'primary'), 'ledger');
+    modal('维修工单', `${current}<h2 class="section-title">夜班记录</h2><table class="record-table"><thead><tr><th>机房</th><th>任务</th><th>最佳时间</th><th>记录</th></tr></thead><tbody>${records}</tbody></table>`, button('journal', '夜班通讯') + button('help', '操作指南') + button('back', '返回', 'primary'), 'ledger');
   }
   function photo() {
     if (!hasRun) { toast('进入机房后可以拍照。'); return; }
@@ -161,11 +200,14 @@ function boot() {
     const labels = usingPad ? ['左摇杆', 'A', 'B', 'X', 'Y'] : ['WASD', 'E', 'Q', 'Space', 'H'];
     document.querySelectorAll<HTMLElement>('[data-control]').forEach((element, i) => element.textContent = labels[i]);
     $('camera-controls').textContent = usingPad ? '右摇杆调整视角与缩放 · Start 暂停' : '右键拖动视角 · 滚轮缩放 · C 复位';
+    $('undo-key').textContent = usingPad ? 'LB' : 'Z';
+    $<HTMLButtonElement>('undo-button').disabled = history.size === 0;
+    $('mechanic-status').innerHTML = (sim.level.plates ?? []).map(p => `<span class="${sim.plateActive(p.id) ? 'active' : ''}">压板 ${p.id} · ${sim.plateActive(p.id) ? '光闸放行' : '光闸关闭'}</span>`).join('') + (sim.level.inverters?.length ? `<span class="phase-${sim.pulses[0]?.phase ?? 'warm'}">场内脉冲 · ${sim.pulses.length ? sim.pulses[0].phase === 'cool' ? '冷光 ◇' : '暖光 ●' : '等待发射'}</span>` : '') + (sim.level.portals?.length ? '<span>导光井 A ↔ A · 保持方向</span>' : '');
     $('timer').textContent = fmt(sim.elapsed); $('hits').textContent = `${sim.hits}`;
     $('lesson').hidden = sim.elapsed > 20 && !observe;
     $('receivers').innerHTML = sim.level.receivers.map((r, i) => {
       const s = sim.receivers[r.id], live = s.charge > 0;
-      return `<div class="receiver-row ${live ? 'powered' : ''}"><span class="receiver-icon">${i + 1}</span><div><b>${r.name}</b><small>${live ? `${s.charge.toFixed(1)} 秒 · ${Math.min(s.hits, sim.level.repeats)}/${sim.level.repeats}` : '等待供电'}</small><div class="charge-track"><i style="width:${s.charge / r.ttl * 100}%"></i></div></div><span class="receiver-check">${s.hits >= sim.level.repeats && live ? '✓' : '○'}</span></div>`;
+      return `<div class="receiver-row ${live ? 'powered' : ''}"><span class="receiver-icon">${i + 1}</span><div><b>${r.name}${r.phase ? `<span class="phase-badge phase-${r.phase}">${r.phase === "cool" ? "冷 ◇" : "暖 ●"}</span>` : ""}</b><small>${live ? `${s.charge.toFixed(1)} 秒 · ${Math.min(s.hits, sim.level.repeats)}/${sim.level.repeats}` : '等待供电'}</small><div class="charge-track"><i style="width:${s.charge / r.ttl * 100}%"></i></div></div><span class="receiver-check">${s.hits >= sim.level.repeats && live ? '✓' : '○'}</span></div>`;
     }).join('');
     $('source-state').innerHTML = `<span class="status-dot ${sim.sourceOn ? 'red' : ''}"></span> 发射器${sim.sourceOn ? '在线' : '已关闭'} <b>${sim.exitOpen ? '出口已开放 ↗' : sim.stable && sim.level.offGrid ? '请关闭发射器' : '出口待机'}</b>`;
     $('observe-banner').hidden = !observe;
@@ -185,6 +227,7 @@ function boot() {
     else if (previous === 'settings') settings();
     else if (previous === 'saves') saves();
     else if (previous === 'ledger') ledger();
+    else if (previous === 'journal') journal();
     else if (previous === 'levels') levels();
     else if (previous === 'wardrobe') wardrobe();
     else if (previous === 'win') complete();
@@ -192,12 +235,23 @@ function boot() {
   }
   function action(a: string) {
     sound.unlock(); sound.play('ui');
-    if (a === 'continue') { if (data.checkpoint) load(data.checkpoint.level, true); else load(data.unlocked); }
+    if (a === 'story-next') { if (activeStory && !activeStory.player.next()) finishStory(); else renderStory(); }
+    else if (a === 'story-prev') { activeStory?.player.previous(); renderStory(); }
+    else if (a === 'story-skip') finishStory();
+    else if (a === 'journal') journal();
+    else if (/^replay-\d+-(before|after)$/.test(a)) {
+      const [, n, kind] = a.split('-');
+      const scene = availableScenes(data.story.seen, data.records).find(s => s.level === Number(n) && s.kind === kind);
+      if (scene) playStory(scene, () => { setScreen('journal'); journal(); }, true);
+    }
+    else if (a === 'continue') { if (data.checkpoint) load(data.checkpoint.level, true); else load(data.unlocked); }
     else if (a === 'menu') menu();
     else if (a === 'pause') { if (screen === '') pause(); else if (screen === 'pause') action('resume'); }
     else if (a === 'resume') { modalHistory.length = 0; setScreen(''); $('overlay').innerHTML = ''; }
     else if (a === 'restart' && hasRun) load(sim.level.id);
     else if (a === 'next') load(Math.min(LEVELS.length - 1, sim.level.id + 1));
+    else if (a === 'relay') load(7);
+    else if (a === 'undo') gameAction('undo');
     else if (a === 'levels') levels();
     else if (a === 'settings') settings();
     else if (a === 'help') help();
@@ -235,6 +289,7 @@ function boot() {
     else if (a === 'sound') { data.settings.muted = !data.settings.muted; sound.mute(data.settings.muted); persist(); $('sound-btn').textContent = `声音 ${data.settings.muted ? '关' : '开'}`; if (screen === 'settings') settings(); }
     else if (a === 'quality') { data.settings.highQuality = !data.settings.highQuality; view.setQuality(data.settings.highQuality); persist(); settings(); }
     else if (a === 'motion') { data.settings.reducedMotion = !data.settings.reducedMotion; persist(); settings(); }
+    else if (a === 'dialogue') { data.settings.dialogue = !data.settings.dialogue; persist(); settings(); }
     else if (a === 'music') { data.settings.music = !data.settings.music; sound.setMusic(data.settings.music); persist(); settings(); }
     else if (a === 'volume') { data.settings.volume = data.settings.volume >= .99 ? 0 : Math.min(1, Math.round((data.settings.volume + .1) * 10) / 10); sound.setVolume(data.settings.volume); persist(); settings(); }
     else if (a === 'dof') { data.settings.depthOfField = !data.settings.depthOfField; persist(); settings(); }
@@ -259,8 +314,12 @@ function boot() {
     if (screen !== '') return;
     if (a === 'observe') { observe = !observe; sound.play('ui'); updateHud(); }
     else if (a === 'hint') hint();
-    else if (!observe && a === 'interact') { const before = sim.moves; sim.interact(); if (sim.carried && before === sim.moves && !sim.validCell(sim.targetCell)) toast('前方格子被占用，朝向一块空地再放下。'); }
-    else if (!observe && a === 'rotate') sim.rotate();
+    else if (!observe && a === 'interact') { const before = sim.moves; history.perform(sim, () => sim.interact()); if (sim.carried && before === sim.moves && !sim.validCell(sim.targetCell)) toast('前方格子被占用，朝向一块空地再放下。'); }
+    else if (!observe && a === 'rotate') history.perform(sim, () => sim.rotate());
+    else if (a === 'undo') {
+      if (history.undo(sim)) { view.load(sim.level); updateHud(); checkpoint(); toast('已撤销装置操作，回路与脉冲一并恢复。'); }
+      else toast('本次进入机房后，还没有可撤销的操作。');
+    }
   }
   addEventListener('keydown', e => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -270,6 +329,17 @@ function boot() {
       const options = [...$('overlay').querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
       if (options.length) { e.preventDefault(); const index = options.indexOf(document.activeElement as HTMLButtonElement); options[(index + (e.shiftKey ? -1 : 1) + options.length) % options.length].focus(); } return;
     }
+    if (screen === 'story') {
+      if (['Space', 'Enter', 'KeyE', 'ArrowRight', 'ArrowLeft', 'Escape'].includes(e.code)) {
+        e.preventDefault();
+        if (!e.repeat) {
+          const focused = document.activeElement;
+          if (e.code === 'Enter' && focused instanceof HTMLButtonElement && $('overlay').contains(focused)) focused.click();
+          else action(e.code === 'Escape' ? 'story-skip' : e.code === 'ArrowLeft' ? 'story-prev' : 'story-next');
+        }
+      }
+      return;
+    }
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) && screen === '') e.preventDefault();
     if (e.code === 'Escape') { e.preventDefault(); if (screen === '') pause(); else if (screen === 'pause') action('resume'); else if (screen !== 'menu' && screen !== 'win') back(); return; }
     if (screen !== '') return;
@@ -278,6 +348,7 @@ function boot() {
     if (e.code === 'KeyQ') gameAction('rotate');
     if (e.code === 'Space') gameAction('observe');
     if (e.code === 'KeyH') gameAction('hint');
+    if (e.code === 'KeyZ') gameAction('undo');
     if (e.code === 'KeyR') action('restart');
     if (e.code === 'KeyC') view.resetCamera();
     if (e.code === 'KeyI') ledger();
@@ -298,10 +369,11 @@ function boot() {
     const pad = navigator.getGamepads?.().find(p => p?.mapping === 'standard');
     const input = controller.read(pad ?? undefined, dt);
     if (!pad) usingPad = false;
-    else if (input.move.x || input.move.y || input.camera.x || input.camera.y || input.interact || input.rotate || input.observe || input.hint || input.pause || input.navigation) usingPad = true;
+    else if (input.move.x || input.move.y || input.camera.x || input.camera.y || input.interact || input.rotate || input.observe || input.hint || input.undo || input.pause || input.navigation) usingPad = true;
     $('pad-state').textContent = pad ? ' · 手柄已连接' : '';
     if (input.pause) { sound.unlock(); if (screen === '') pause(); else if (screen === 'pause') action('resume'); }
     if (screen === '') {
+      if (input.undo) gameAction('undo');
       if (input.interact) gameAction('interact'); if (input.rotate) gameAction('rotate'); if (input.observe) gameAction('observe'); if (input.hint) gameAction('hint');
       if (input.camera.x) view.orbit(input.camera.x * dt);
       if (input.camera.y) view.zoomBy(-input.camera.y * dt * .5);
@@ -316,7 +388,7 @@ function boot() {
         sound.unlock();
         const active = options.find(option => option === document.activeElement) ?? options[0]; active?.click();
       }
-      if (input.back && screen !== 'menu' && screen !== 'win') { if (screen === 'pause') action('resume'); else back(); }
+      if (input.back && screen !== 'menu' && screen !== 'win') { if (screen === 'story') action('story-skip'); else if (screen === 'pause') action('resume'); else back(); }
     }
     return input.move;
   }
@@ -352,11 +424,11 @@ function boot() {
     frameCount++; requestAnimationFrame(frame);
   }
   // A read-only diagnostic surface supports browser smoke checks without exposing solutions in the UI.
-  Object.defineProperty(window, '__borrowedFire', { get: () => ({ screen, level: sim.level.id, frameCount, powered: sim.powered, exitOpen: sim.exitOpen, player: { ...sim.player }, appearance: { ...data.appearance }, slots: data.slots.map(Boolean), depthOfField: view.dof.enabled }) });
+  Object.defineProperty(window, '__borrowedFire', { get: () => ({ screen, storyScene: activeStory?.player.scene.id, storyLine: activeStory?.player.index, elapsed: sim.elapsed, level: sim.level.id, frameCount, carried: sim.carried?.id ?? null, undoDepth: history.size, powered: sim.powered, exitOpen: sim.exitOpen, player: { ...sim.player }, appearance: { ...data.appearance }, slots: data.slots.map(Boolean), depthOfField: view.dof.enabled }) });
   menu(); requestAnimationFrame(frame);
 }
 
 try { boot(); } catch (error) {
   console.error(error);
-  app.innerHTML = `<div class="fallback"><span class="eyebrow">BORROWED FIRE</span><h1>这间机房暂时无法启动。</h1><p>请使用支持 WebGL 2 的桌面浏览器，并开启硬件加速。</p><p>如果你直接打开了 HTML 文件，请改用 README 中的本地服务器命令。</p><button onclick="location.reload()">重新启动</button></div>`;
+  app.innerHTML = `<div class="fallback"><span class="eyebrow">BORROWED FIRE</span><h1>这间机房暂时无法启动。</h1><p>请使用支持 WebGL 2 的桌面浏览器，并开启硬件加速。</p><p>离线游玩请使用导出的单文件 HTML；项目源码的运行方式请查看 README。</p><button onclick="location.reload()">重新启动</button></div>`;
 }

@@ -49,6 +49,8 @@ export class Sound {
         this.lastReflect = now; this.tone([220, 293.66, 329.63, 440, 493.88][this.note++ % 5] * 2, .22, 'sine', .14); break;
       }
       case 'charge': [220, 330, 440].forEach((f, i) => this.tone(f, .5, 'sine', .11, i * .04)); break;
+      case 'teleport': this.tone(220, .35, 'sine', .12); this.tone(880, .4, 'sine', .08, .08); break;
+      case 'phase': this.tone(520, .16, 'triangle', .09); break;
       case 'emit': this.tone(100, .3, 'triangle', .15); this.tone(420, .15, 'sine', .12, .03); break;
       case 'pickup': this.tone(330, .12, 'triangle'); this.tone(490, .12, 'sine', .15, .06); break;
       case 'drop': this.tone(180, .15, 'triangle', .2); break;
