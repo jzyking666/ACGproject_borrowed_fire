@@ -1,6 +1,6 @@
 {
   "name": "borrowed-fire",
-  "version": "0.3.0",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,6 +9,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
+    "audit:campaign": "node --import tsx scripts/audit-campaign.ts",
+    "audit:levels": "node --import tsx scripts/audit-levels.ts",
     "build:html": "tsc --noEmit && node scripts/build-html.mjs"
   },
   "dependencies": {

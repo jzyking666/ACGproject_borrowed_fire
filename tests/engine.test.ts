@@ -41,9 +41,31 @@ function approach(sim: Simulation, target: Cell, predicate: () => boolean) {
   assert.fail(`不能接近 ${target.x},${target.y}`);
 }
 
+function teach(sim: Simulation) {
+  for (const recipe of sim.level.echoSolution ?? []) {
+    const route = pathTo(sim, recipe.start); assert.ok(route); walk(sim, route);
+    sim.toggleRecording(); assert.ok(sim.recording);
+    for (const step of recipe.steps) {
+      const path = pathTo(sim, step.target); assert.ok(path);
+      for (const cell of path.slice(1)) {
+        for (let t = 0; t < 1 / 3.2 - 1e-8;) {
+          const h = Math.min(1 / 120, 1 / 3.2 - t);
+          sim.move(Math.sign(cell.x - sim.player.x) * Number(Math.abs(cell.x - sim.player.x) > 1e-6), Math.sign(cell.y - sim.player.y) * Number(Math.abs(cell.y - sim.player.y) > 1e-6), h);
+          sim.step(h, false); t += h;
+        }
+      }
+      advance(sim, step.wait);
+    }
+    sim.toggleRecording(); assert.equal(sim.recording, null);
+    if (recipe.period) sim.retimeEcho(sim.echoes.length - 1, recipe.period);
+  }
+}
+
 for (const level of LEVELS) {
   test(`机房 ${level.id + 1}：参考布局确实可以供电并通关`, () => {
     const sim = new Simulation(level); sim.mirrors = structuredClone(level.solution);
+    sim.sourceOn = false; teach(sim); sim.sourceOn = true;
+    if (level.echoSolution?.some(r => r.period)) sim.synchronizeEchoes();
     sim.player = { x: 1, y: 1 };
     let achieved = false;
     for (let i = 0; i < 60 * 35; i++) {
@@ -88,8 +110,10 @@ for (const level of LEVELS) {
       approach(sim, target, () => true); sim.interact(); assert.equal(sim.carried, null);
       assert.deepEqual(sim.mirrors.find(m => m.id === target.id), target);
     }
+    teach(sim);
     const exitPath = pathTo(sim, level.exit); assert.ok(exitPath, '搭好设备后出口必须仍可到达');
     approach(sim, level.source, () => sim.nearest === 'source'); sim.interact(); assert.equal(sim.sourceOn, true);
+    if (level.echoSolution?.some(r => r.period)) sim.synchronizeEchoes();
     advance(sim, 25); assert.equal(sim.stable, true);
     if (level.offGrid) { sim.interact(); assert.equal(sim.sourceOn, false); }
     walk(sim, pathTo(sim, level.exit)!); sim.step(.01, false); assert.equal(sim.won, true);

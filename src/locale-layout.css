@@ -1,0 +1,44 @@
+/* The survey pins stay over their landmarks as the printed names wrap. */
+html:lang(en) .atlas-station {
+  width: 19%;
+}
+html:lang(en) .atlas-station span {
+  max-width: 100%;
+  white-space: normal;
+  text-wrap: balance;
+  line-height: 1.12;
+  text-align: center;
+}
+
+/* English terminal labels extend beyond the Chinese chart's engraved frame.
+   Use the edge of the SVG viewport for the frame and give its labels a gutter. */
+html:lang(en) .loom-chart {
+  box-sizing: border-box;
+  padding-inline: 1.1rem 3.4rem;
+  overflow: visible;
+  outline: 1px solid #718c8e;
+  outline-offset: -1px;
+}
+html:lang(en) .loom-chart > rect[stroke] {
+  stroke: none;
+}
+html:lang(en) .loom-assembly:has(.loom-key:nth-child(5)) .loom-chart {
+  min-width: 34rem;
+}
+html:lang(en) .loom-assembly:has(.loom-key:nth-child(7)) .loom-chart {
+  min-width: 44rem;
+}
+
+/* The fixed departure note shares its card with the vessel's name and beat. */
+html:lang(en) .tide-fixed {
+  max-width: 8.5em;
+  text-align: end;
+}
+@media (max-width: 900px) {
+  html:lang(en) .camp-map-spread {
+    grid-template-columns: minmax(0,1fr);
+  }
+  html:lang(en) .tide-vessels {
+    grid-template-columns: repeat(auto-fit,minmax(min(100%,13.5rem),1fr));
+  }
+}

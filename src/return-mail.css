@@ -1,0 +1,52 @@
+.mail-intro,.mail-counter,.mail-missing,.mail-annotation { color:var(--text-secondary); font-size:var(--text-small); }
+.mail-intro { max-width:43em; }
+.mail-counter { margin-top:12px; font-variant-numeric:tabular-nums; }
+.mail-cabinet { margin-top:14px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); padding:8px 10px; column-gap:10px; row-gap:5px; border:1px solid #47483c; background:#505146; }
+.mail-folder { position:relative; display:flex; align-items:center; gap:14px; min-height:72px; padding:4px 12px 8px; background:#e8dec7; color:#302f2b; border-bottom:5px solid #77755f; box-shadow:inset 0 2px #fcf4de; text-align:left; }
+.mail-folder.is-posted { background:#f7efda; border-bottom-color:var(--post-ink,#716d59); }
+.mail-folder:is(:hover,:focus-visible) { background:#fff7df; border-bottom-color:#a3462b; }
+.mail-folder span>b,.mail-folder span>small { display:block; }
+.mail-folder span>b { font:700 1.09rem/1.35 var(--font-display); }
+.mail-folder span>small { font:var(--text-caption)/1.5 var(--font-ui); color:#5c5b4c; margin-top:3px; }
+.mail-chevron { margin-left:auto; color:#744331; }
+.mail-stamp { width:48px; flex-shrink:0; color:#777766; transform:rotate(-6deg); }
+.mail-stamp.inked,.mail-folder:is(:hover,:focus-visible) .mail-stamp { color:var(--post-ink); }
+.mail-stamp text { font-family:var(--font-ui); }
+.mail-case { display:grid; grid-template-columns:1.15fr 1fr; align-items:start; gap:clamp(18px,2.5vw,32px); }
+.mail-envelope { padding:15px clamp(14px,2.1vw,25px) 24px; position:relative; overflow:hidden; background:#f5ecd6; color:#302f29; border:1px solid #b0a284; box-shadow:2px 3px 0 #cabfa7; }
+.mail-envelope::after { content:''; display:block; position:absolute; inset:auto 0 0; height:6px; background:repeating-linear-gradient(129deg,#8f3d30 0 9px,#f5ecd6 9px 17px,#4a6571 17px 26px,#f5ecd6 26px 34px); }
+.mail-frank { position:relative; float:right; width:72px; height:77px; margin:-4px -5px 6px 8px; }
+.mail-frank .mail-stamp { position:absolute; top:0; right:0; width:61px; color:#8a7860; }
+.mail-frank .mail-stamp.inked { color:var(--post-ink); }
+.mail-frank>svg:nth-child(2) { width:49px; height:auto; position:absolute; right:27px; top:45px; stroke:#695f4a; stroke-width:1.35; fill:none; opacity:.65; }
+.mail-envelope h2,.mail-picker h3 { font:600 var(--text-caption)/1.5 var(--font-ui); }
+.mail-envelope h2 { margin:0 0 5px; color:#805034; }
+.mail-envelope h2:not(:first-child) { margin-top:14px; border-top:1px dotted #b8a988; padding-top:9px; }
+.mail-envelope p { margin:0; font:500 1.02rem/1.9 var(--font-display); }
+.mail-evidence,.mail-receipt { border-top:3px double #514e40; padding-top:5px; }
+.mail-evidence h2,.mail-receipt h2 { margin-bottom:6px; font:700 1.15rem/1.5 var(--font-display); color:#584234; }
+.mail-evidence article { padding:6px 0; border-top:1px solid var(--rule); }
+.mail-evidence h3,.mail-receipt div { color:var(--text-main); font:600 var(--text-small)/1.5 var(--font-ui); }
+.mail-evidence p,.mail-missing,.mail-bounce { line-height:1.7; font-size:var(--text-small); }
+.mail-evidence p { color:var(--text-secondary); }
+.mail-address { display:flex; flex-wrap:wrap; gap:12px; align-items:stretch; margin-top:14px; border-block:1px solid var(--rule); padding:8px 0; }
+.mail-picker { flex:1 1 210px; }
+.mail-picker h3 { margin:0 0 5px; color:#5d5342; }
+.mail-picker div { display:flex; flex-wrap:wrap; gap:3px; }
+.mail-picker button,.mail-swap { min-height:31px; padding:3px 8px; font-size:var(--text-small); background:#e3d9c5; border-bottom:1px solid #8e836b; color:#39392d; }
+.mail-picker button[aria-pressed=true] { background:#853b2e; color:#fff4d9; border-color:#753222; box-shadow:inset 0 -2px #56281b; }
+.mail-swap { align-self:end; color:#624433; }
+.mail-bounce,.mail-missing { margin-top:10px; color:#873c2d; }
+.mail-receipt p { font:500 1.02rem/1.9 var(--font-display); }
+.mail-receipt .mail-annotation { font:var(--text-small)/1.7 var(--font-ui); }
+.mail-receipt div { padding:7px 0 4px; margin-top:11px; border-top:1px dashed var(--rule); }
+@media(max-width:670px) {
+  .mail-case { grid-template-columns:1fr; gap:14px; }
+  .mail-cabinet { column-gap:5px; padding:5px; }
+  .mail-folder { gap:6px; padding-inline:6px; }
+  .mail-stamp { width:35px; }
+}
+@media(max-width:470px) {
+  .mail-cabinet { grid-template-columns:1fr; }
+  .mail-folder { min-height:55px; }
+}

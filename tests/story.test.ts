@@ -4,7 +4,7 @@ import { STORY, CAST, sceneFor, validSceneId, normalizeSeen, availableScenes, St
 import { LEVELS } from '../src/levels';
 import { defaults, parseSave, exportSave, importSave } from '../src/storage';
 
-test('十二关都有完整的入场、完工通讯和交接记录，角色引用有效', () => {
+test('全部关卡都有完整的入场、完工通讯和交接记录，角色引用有效', () => {
   assert.equal(STORY.length, LEVELS.length);
   const ids = new Set<string>();
   for (const level of LEVELS) {
@@ -16,10 +16,10 @@ test('十二关都有完整的入场、完工通讯和交接记录，角色引�
       for (const line of scene.lines) { assert.ok(Object.hasOwn(CAST, line.speaker)); assert.ok(line.text.trim()); }
     }
   }
-  assert.equal(ids.size, 24);
+  assert.equal(ids.size, LEVELS.length * 2);
 });
 test('通讯编号拒绝越界、注入、非标准整数及错误阶段', () => {
-  for (const id of ['12:before', '-1:after', '01:before', '0:ending', '0:before<script>', {}, 0, null]) assert.equal(validSceneId(id), false);
+  for (const id of [`${STORY.length}:before`, '-1:after', '01:before', '0:ending', '0:before<script>', {}, 0, null]) assert.equal(validSceneId(id), false);
   assert.throws(() => sceneFor(99, 'before'));
 });
 test('收录通讯过滤无效条目，去重并保持顺序', () => {

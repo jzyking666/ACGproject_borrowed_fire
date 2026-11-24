@@ -1,0 +1,44 @@
+/* The inbox uses the common edges of a docket, so each status lines up. */
+.dispatch-list { margin-top: 1.3rem; border-top: 2px solid var(--text-main); }
+.dispatch-row { display: grid; width: 100%; grid-template-columns: 2rem minmax(0,1fr) auto; align-items: center; gap: 1.1rem; padding: .9rem .45rem; text-align: left; border-bottom: 1px solid var(--rule); }
+.dispatch-row:is(:hover,:focus-visible) { background: #923e2510; }
+.dispatch-no { align-self: start; font: .93rem/1.7 var(--font-key); color: var(--orange); }
+.dispatch-row strong { display: block; font: 650 1.15rem/1.45 var(--font-display); }
+.dispatch-row small { display: block; font-size: var(--text-small); color: var(--text-secondary); margin-top: .18rem; }
+.dispatch-status { font-size: var(--text-caption); padding: .16em .55em; white-space: nowrap; color: var(--text-secondary); }
+.dispatch-row[data-state="working"] .dispatch-status { color: var(--orange); border-bottom: 2px solid currentColor; }
+.dispatch-row[data-state="filed"] .dispatch-status { color: var(--green); border: 1px solid currentColor; transform: rotate(-4deg); }
+
+.dispatch-letter { display: grid; grid-template-columns: minmax(0,1.55fr) minmax(12rem,1fr); border-block: 1px solid #93856c; background: #f5edda; color: #2d302c; }
+.dispatch-correspondence { grid-row: span 2; padding: clamp(1rem,2.3vw,2rem); }
+.dispatch-letter header { display: flex; flex-direction: column; align-items: start; gap: .2rem; }
+.dispatch-letter header span, .dispatch-spec small { font-size: var(--text-caption); color: #676154; }
+.dispatch-letter header b { font: 600 1.15rem/1.45 var(--font-display); }
+.dispatch-letter blockquote,.dispatch-reply blockquote { margin: 1.15rem 0 .3rem; font: 500 1.1rem/1.9 var(--font-display); }
+.dispatch-spec,.dispatch-budget { border-left: 1px dashed #a2987c; background: #e7dfc9; padding: .9rem 1.1rem 0; }
+.dispatch-spec .room-plan { display: block; width: min(10rem,100%); height: auto; margin-bottom: .5rem; }
+.dispatch-spec p { margin: .45rem 0; font-size: var(--text-small); line-height: 1.65; }
+.dispatch-budget { padding-block: .6rem .95rem; color: #5d594e; font-size: var(--text-caption); }
+.dispatch-budget b { color: #86402d; font-weight: 650; }
+.dispatch-help { margin-top: .9rem; font-size: var(--text-small); line-height: 1.75; color: var(--text-secondary); }
+.dispatch-reply { margin: 1rem 0; padding: 1rem 1.3rem; background: #e5ead9; border-inline-start: .24rem solid #4b6655; }
+.dispatch-reply h2 { font-size: var(--text-small); color: #36533f; }
+.dispatch-reply blockquote { margin: .65rem 0; color: #27392f; }
+.dispatch-reply p { color: #46544b; font-size: var(--text-small); text-align: right; }
+@media(max-width:620px) {
+  .dispatch-letter { grid-template-columns: 1fr; }
+  .dispatch-correspondence { grid-row: auto; }
+  .dispatch-spec { border-top: 1px dashed #a2987c; display: flex; align-items: center; gap: .8rem; }
+  .dispatch-spec,.dispatch-budget { border-left: 0; }
+  .dispatch-spec .room-plan { width: 5.5rem; flex-shrink: 0; }
+}
+#repair-tally { margin-top: 10px; color: #d5be8f; font-size: var(--text-small); }
+.observe-banner button { color: var(--text-main); background: #a8c5a414; border: 1px solid var(--rule); padding: 4px 9px; white-space: nowrap; pointer-events: auto; }
+.forecast-findings { margin-top: 15px; }
+.forecast-findings h2 { font-size: var(--text-caption); font-weight: 500; color: #a8c5d0; }
+.forecast-findings button { display: block; width: 100%; text-align: left; margin-top: 5px; border-left: 2px solid #817762; padding: 5px 9px; color: var(--text-main); background: #a89b7710; font-size: var(--text-small); }
+.forecast-findings time { color: #d7b27d; font-variant-numeric: tabular-nums; }
+.forecast-findings button[aria-pressed=true] { border-color: #f5c17f; background: #dcc09124; }
+.inspection-pin { position: absolute; top: 0; left: 0; pointer-events: none; }
+.inspection-pin i { position: absolute; width: 20px; height: 20px; transform: translate(-50%, -50%) rotate(45deg); border: 2px solid #ffe3a4; outline: 2px solid #262623; }
+.inspection-pin span { position: absolute; left: 14px; top: -25px; padding: 1px 5px; font-variant-numeric: tabular-nums; font-size: var(--text-caption); background: #202423ee; white-space: nowrap; }

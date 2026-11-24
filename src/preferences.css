@@ -1,0 +1,55 @@
+#app[data-screen="settings"] .dialog { width:min(900px,100%); }
+.pref-book { display:grid; grid-template-columns:minmax(6.8rem,.24fr) minmax(0,1fr); align-items:start; gap:clamp(12px,3vw,34px); }
+.pref-index { display:grid; position:sticky; top:0; gap:0; margin:0; background:var(--surface); }
+.pref-index button { text-align:left; padding:.6em .3em; color:var(--text-secondary); border-bottom:1px solid var(--rule); }
+.pref-index button:is(:hover,:focus-visible) { background:var(--surface-raised); color:var(--orange); }
+.pref-book .settings-section { display:block; padding-bottom:.65rem; scroll-margin-top:4px; }
+.pref-book .settings-section h2 { padding:.55rem 0 .3rem; }
+.settings-section .pref-channel { display:grid; grid-template-columns:minmax(4.6em,.8fr) minmax(7rem,1.5fr) 3.7em 3.4em; align-items:center; gap:.25rem; min-height:2.9rem; border-bottom:1px dotted var(--rule); }
+.pref-channel .pref-fader { display:flex; align-items:center; gap:3px; }
+.pref-channel input { min-width:0; width:100%; accent-color:var(--orange); }
+.settings-section .pref-fader button,.settings-section .pref-listen,.settings-section .pref-bindings button { display:inline-flex; justify-content:center; width:auto; border:1px solid var(--rule); min-height:30px; padding:.1em .4em; }
+.pref-channel output { text-align:center; font:500 .86rem var(--font-key); }
+.pref-channel .pref-listen { font-size:var(--text-caption); }
+.pref-row .setting-label { min-width:0; overflow-wrap:break-word; }
+.pref-row .setting-value { flex:none; }
+.pref-bindings { padding:.6rem .4rem; border-bottom:1px dotted var(--rule); }
+.pref-bindings>div:last-child { display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.45rem; }
+.settings-section .pref-bindings button { gap:.35rem; align-items:center; }
+.pref-bindings button[aria-pressed=true] { background:var(--surface-raised); outline:2px solid var(--orange); }
+#sound-caption { position:fixed; bottom:136px; left:50%; transform:translateX(-50%); padding:.25em .65em; background:#18272ef0; color:#fff4dc; font-size:var(--text-small); pointer-events:none; }
+#app[data-observing=true] #sound-caption { display:none; }
+:lang(en) .cover-art h1 { font:700 clamp(2.8rem,5.8vw,5.8rem)/.88 Georgia,serif; letter-spacing:-.065em; }
+:lang(en) .cover-art h1 span { display:block; }
+:lang(en) .cover-campaign { flex-wrap:wrap; align-items:center; gap:.25em .6em; }
+:lang(en) .cover-campaign>span { font-size:clamp(1.2rem,1.8vw,1.8rem); }
+:lang(en) .control-bar { max-width:97vw; white-space:normal; flex-wrap:wrap; justify-content:center; gap:5px 12px; }
+:lang(en) .camp-sector button, :lang(en) .mail-picker button { overflow-wrap:anywhere; }
+@media (max-width:900px) {
+ .pref-book { display:block; }
+ .pref-index { display:flex; position:static; flex-wrap:wrap; margin-bottom:.45rem; }
+ .pref-index button { font-size:var(--text-caption); }
+ .settings-section .pref-channel { grid-template-columns:minmax(4.3em,1fr) minmax(5.5em,1.4fr) 3em 3.5em; }
+}
+@media (max-width:510px) {
+ .settings-section .pref-channel { grid-template-columns:minmax(0,1fr) 3.3em 3.5em; padding-block:.35rem; }
+ .pref-channel .pref-fader { grid-column:1/-1; grid-row:2; }
+ .pref-book .pref-row { flex-wrap:wrap; gap:.2rem 1rem; }
+ .pref-row .setting-value { margin-left:auto; }
+}
+
+#app[data-reduced-motion="true"] *, #app[data-reduced-motion="true"] *::before, #app[data-reduced-motion="true"] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+.cover-notes { display:flex; align-items:baseline; justify-content:space-between; gap:.45em; }
+.cover-notes button { padding:.15em 0; color:var(--cover-ink); font:500 .8rem/1.4 var(--font-ui); text-decoration:underline; text-underline-offset:.2em; }
+.pref-fader input { appearance:none; background:transparent; height:28px; cursor:pointer; }
+.pref-fader input::-webkit-slider-runnable-track { height:4px; background:linear-gradient(to right,var(--orange) var(--fader), var(--rule) var(--fader)); }
+.pref-fader input::-moz-range-track { height:4px; background:var(--rule); }
+.pref-fader input::-moz-range-progress { height:4px; background:var(--orange); }
+.pref-fader input::-webkit-slider-thumb { appearance:none; width:13px; height:19px; margin-top:-8px; border:1px solid var(--ink); border-radius:2px; background:var(--surface); }
+.pref-fader input::-moz-range-thumb { width:12px; height:18px; border:1px solid var(--ink); border-radius:2px; background:var(--surface); }
+.settings-section .pref-fader button:last-child, .settings-section .pref-listen:last-child, .settings-section .pref-bindings button:last-child { border-bottom:1px solid var(--rule); }

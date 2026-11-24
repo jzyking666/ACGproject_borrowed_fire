@@ -1,22 +1,22 @@
 export interface PadFrame {
   move: { x: number; y: number }; camera: { x: number; y: number };
-  undo: boolean; interact: boolean; rotate: boolean; observe: boolean; hint: boolean; pause: boolean; back: boolean; confirm: boolean;
+  record: boolean; erase: boolean; undo: boolean; interact: boolean; rotate: boolean; observe: boolean; hint: boolean; pause: boolean; back: boolean; confirm: boolean;
   navigation: number;
 }
 export class Controller {
   private previous: boolean[] = [];
   private navigationTime = 0;
   private direction = 0;
-  read(pad: Pick<Gamepad, 'buttons' | 'axes'> | undefined, dt: number): PadFrame {
-    const result: PadFrame = { move: { x: 0, y: 0 }, camera: { x: 0, y: 0 }, undo: false, interact: false, rotate: false, observe: false, hint: false, pause: false, back: false, confirm: false, navigation: 0 };
+  read(pad: Pick<Gamepad, 'buttons' | 'axes'> | undefined, dt: number, deadZone = .2): PadFrame {
+    const result: PadFrame = { move: { x: 0, y: 0 }, camera: { x: 0, y: 0 }, record: false, erase: false, undo: false, interact: false, rotate: false, observe: false, hint: false, pause: false, back: false, confirm: false, navigation: 0 };
     if (!pad) { this.previous = []; this.direction = 0; this.navigationTime = 0; return result; }
     const b = pad.buttons.map(button => button.pressed);
     const edge = (i: number) => !!b[i] && !this.previous[i];
-    const axis = (v: number) => Math.abs(v) < .2 ? 0 : Math.sign(v) * Math.min(1, (Math.abs(v) - .2) / .8);
+    const axis = (v: number) => Math.abs(v) <= deadZone ? 0 : Math.sign(v) * Math.min(1, (Math.abs(v) - deadZone) / (1 - deadZone));
     result.move = { x: axis(pad.axes[0] ?? 0) + Number(!!b[15]) - Number(!!b[14]), y: axis(pad.axes[1] ?? 0) + Number(!!b[13]) - Number(!!b[12]) };
     result.camera = { x: axis(pad.axes[2] ?? 0), y: axis(pad.axes[3] ?? 0) };
     result.interact = result.confirm = edge(0); result.rotate = result.back = edge(1);
-    result.observe = edge(2); result.hint = edge(3); result.pause = edge(9); result.undo = edge(4);
+    result.observe = edge(2); result.hint = edge(3); result.pause = edge(9); result.undo = edge(4); result.record = edge(6); result.erase = edge(5);
     const direction = Number(!!b[13] || !!b[15] || (pad.axes[1] ?? 0) > .6 || (pad.axes[0] ?? 0) > .6) - Number(!!b[12] || !!b[14] || (pad.axes[1] ?? 0) < -.6 || (pad.axes[0] ?? 0) < -.6);
     this.navigationTime -= dt;
     if (direction && (direction !== this.direction || this.navigationTime <= 0)) {
