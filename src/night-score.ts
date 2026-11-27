@@ -1,5 +1,5 @@
 // Original chamber score. Each character is an eighth note: a scale degree, a tie (-), or a rest (.).
-export type SoundScene = 'menu' | 'room' | 'harbor' | 'workshop' | 'post' | 'paper' | 'story';
+export type SoundScene = 'menu' | 'room' | 'harbor' | 'workshop' | 'post' | 'paper' | 'story' | 'tram';
 export type Instrument = 'tine' | 'reed' | 'wire' | 'wood' | 'bass' | 'pad';
 interface Score {
   bpm: number;
@@ -11,6 +11,13 @@ interface Score {
   backing: string; // Bass, fifth, third and octave on a recurring eighth-note grid.
 }
 export const scores: Record<SoundScene, Score> = {
+  tram: {
+    // A slow three-beat sway. The paired axle taps enter when the line first carries a load.
+    bpm: 72, lead: 'reed', bass: [1, 6, 4, 2, 6, 3, 5, 1], backing: 'b..53.',
+    bars: ['..3-6-', '5---..', '..2-4-', '3---..', '6--5.3', '2-.4--', '.5.43-', '1-----'],
+    bridge: ['.3.5--', '8---7-', '6--4.2', '3---..', '.4.6--', '5--3--', '2-.42-', '1---..'],
+    answers: ['4--.32', '1--...'],
+  },
   menu: {
     bpm: 78, lead: 'tine', bass: [1, 4, 6, 5, 1, 3, 4, 1], backing: 'b...5..3',
     bars: ['2-5.4---', '..3-1---', '4--.6-5.', '3---....', '..2-5-8.', '7-.5.3-.', '4--.2-3.', '1---....'],
@@ -79,15 +86,15 @@ export function scoreNotes(scene: SoundScene, district: number, step: number, lo
   const mark = score.backing[pos];
   if (mark === 'b') {
     notes.push({ instrument: 'bass', midi: pitch(tonic - 12, degree), beats: width * .7, level: .9, pan: -.08 });
-    if (scene === 'story' || scene === 'menu' || (scene === 'room' && load > 0)) {
+    if (scene === 'story' || scene === 'menu' || (scene === 'room' && load > 0) || (scene === 'tram' && load === 1)) {
       notes.push({ instrument: 'pad', midi: pitch(tonic, degree + 2), beats: width * .87, level: .39, pan: -.35 });
     }
-  } else if (mark !== '.' && (scene !== 'room' || load > .01)) {
+  } else if (mark !== '.' && ((scene !== 'room' && scene !== 'tram') || load > .01)) {
     notes.push({ instrument: scene === 'harbor' ? 'wire' : 'wood', midi: pitch(tonic, degree + Number(mark) - 1), beats: 1.25, level: .43, pan: -.34 });
   }
   // Current returning to the circuits brings in a quiet high response on alternate bars.
-  if (scene === 'room' && load >= .5 && bar % 2 === 1 && pos === 5) {
-    notes.push({ instrument: 'tine', midi: pitch(tonic + 12, degree + 4), beats: 2, level: .52 * load, pan: .36 });
+  if ((scene === 'room' || scene === 'tram') && load >= .5 && bar % 2 === 1 && pos === 5) {
+    notes.push({ instrument: scene === 'tram' ? 'wire' : 'tine', midi: pitch(tonic + 12, degree + 4), beats: 2, level: .52 * load, pan: .36 });
   }
   return notes;
 }

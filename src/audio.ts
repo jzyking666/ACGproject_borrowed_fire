@@ -145,7 +145,7 @@ export class Sound {
     if (!ctx || ctx.state !== 'running' || this.hidden || this.muted || !this.volume || !this.channelLevel('music')) return;
     const now = ctx.currentTime;
     if (now < this.previewUntil) return;
-    if (this.scene === 'room' && !running) { this.nextStep = now + .04; return; }
+    if ((this.scene === 'room' || this.scene === 'tram') && !running) { this.nextStep = now + .04; return; }
     const beat = 30 / scores[this.scene].bpm;
     // A delayed or backgrounded frame resumes from one note, instead of replaying missed bars.
     this.nextStep = Math.max(this.nextStep, now + .008);
@@ -227,10 +227,11 @@ export class Sound {
     const tap = (freq: number, length: number, volume: number, delay = 0, endHz?: number, wave: OscillatorType = 'sine') =>
       this.tone(channel, now + .004 + delay, freq, length, wave, volume, .004, .42, length * .55, 0, endHz);
     const noise = (center: number, length: number, volume: number, delay = 0) => this.brush(channel, now + .004 + delay, center, length, volume);
-    if ((event === 'hit' || event === 'win' || event === 'reject') && this.scoreDuck) {
+    const completion = event === 'win' || event === 'tram-bell';
+    if ((event === 'hit' || completion || event === 'reject') && this.scoreDuck) {
       const gain = this.scoreDuck.gain;
       gain.cancelScheduledValues(now); gain.setTargetAtTime(.48, now, .018);
-      gain.setTargetAtTime(1, now + (event === 'win' ? .65 : .26), .22);
+      gain.setTargetAtTime(1, now + (completion ? .65 : .26), .22);
     }
     switch (event) {
       case 'ui': tap(540,.045,.075,0,415); break;
@@ -238,6 +239,9 @@ export class Sound {
       case 'ratchet': noise(2700,.035,.28); tap(310,.06,.12,.012,176,'triangle'); noise(1600,.04,.2,.054); break;
       case 'timetable-key': tap(234,.064,.18,0,140); noise(1480,.044,.22,.023); break;
       case 'postmark': tap(112,.12,.40,0,55); noise(670,.09,.46); noise(3100,.08,.16,.12); tap(698,.38,.09,.18); break;
+      case 'tram-bell':
+        for (const offset of [0,.22]) { tap(642,.67,.23,offset,637); tap(1590,.18,.075,offset); }
+        noise(770,.23,.09,.55); break;
       case 'harbor-bell': tap(388,.58,.21); tap(972,.21,.09,.01); break;
       case 'prism-warm': tap(392,.27,.18); tap(588,.20,.08,.03); break;
       case 'prism-cool': tap(784,.17,.14); tap(1175,.22,.065,.045); break;

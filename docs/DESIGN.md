@@ -37,7 +37,7 @@
 
 纸本文书使用深墨、暖纸和朱砂，运行仪表使用墨蓝底和亮色读数。标题与信文用宋体，操作用黑体，数字和键位单独排印。研究参考与布局规则见 `UI_DESIGN.md`。角色有五服色、三头饰、三胸章，模型与材质实时变化，只有外观差异。
 
-《A Short Hike》用随地点变化的编曲标出空间，《Celeste》的作曲者刻意控制音乐的速度，给玩家计划下一步留出余地。《借火》的七套场景配乐使用同一组音程动机，改变拍号、音色与疏密。码头的簧音用六个八分音符标一小节，织盘的短木音只用五个。机房供电后加进答句，暂停观察时让乐句停下来，给读图留出安静。旋律由项目自行编写。[《A Short Hike》开发者访谈](https://blog.playstation.com/2021/08/05/crafting-a-tiny-open-world-a-look-behind-the-scenes-at-the-creation-of-a-short-hike/) · [《Celeste》团队访谈](https://www.gamedeveloper.com/game-platforms/road-to-the-igf-matt-makes-games-i-celeste-i-)
+《A Short Hike》用随地点变化的编曲标出空间，《Celeste》的作曲者刻意控制音乐的速度，给玩家计划下一步留出余地。《借火》的八套场景配乐使用同一组音程动机，改变拍号、音色与疏密。码头的簧音用六个八分音符标一小节，织盘的短木音只用五个。机房供电后加进答句，暂停观察时让乐句停下来，给读图留出安静。旋律由项目自行编写。[《A Short Hike》开发者访谈](https://blog.playstation.com/2021/08/05/crafting-a-tiny-open-world-a-look-behind-the-scenes-at-the-creation-of-a-short-hike/) · [《Celeste》团队访谈](https://www.gamedeveloper.com/game-platforms/road-to-the-igf-matt-makes-games-i-celeste-i-)
 
 每个接收环得电、失电和拒收各有一种节奏，高优先级线路警报触发配乐短暂让位。反射声限频，避免闭环连续发声盖过设备变化。程序为翻页、梭轮、班表和邮戳分别合成声音，设备声与界面声接入不同的增益通道。总音量位于压缩器之后，设备、配乐、界面音量分别可调。关键现场声也可使用文字字幕。相机反馈是随时间衰减的渲染偏移，「相机震动」和「减少动态效果」均可关闭它。
 
@@ -192,3 +192,9 @@ npm run audit:campaign -- 第一位试玩.csv 第二位试玩.csv
 这条支线让交班笔记参与推理。修好有关地段，玩家就能把实地见闻与一封地址破损的退信摆在一起读。分别选好寄件地、收件地后可以对调印章或试投。正确投递会显示去向、居民回信和对应邮戳。八封独立投递，主战役的任何工单都不以投递为先决条件。邮袋单独记录解读未投邮件的前台时间，战役 CSV 只统计复网工单。
 
 《奥伯拉丁的回归》让玩家以调查员的身份登船，追查船上发生了什么。《借火》把类似的观察与归档放进余照的邮袋。可核对的证物来自自己刚修过的地方，投递的是城市日常里的实物和口信。[Lucas Pope 的游戏介绍](https://obradinn.com/)
+
+## 夜班交接后的电车与街坊
+
+首页的首要选择是有起点与落点的夜班故事。将进度记在回执上，玩家在完工时退出也能接到下一间。电车把前三类维修问题放进一次送人回家的路程；每次改线，都可以在棋盘后面看见同一辆车有何变化。车票留下乘客的回话，窗口、车门和受电弓读同一组接收环状态。最终回执靠屏幕下方显示，留出视野看车辆离开。
+
+《Portal 2》围绕一套空间操作持续变化房间，《A Monster’s Expedition》将主路和可自行探访的难题布置在同一世界里。本作的街名接力从通用工单中选出八个有具体收件人的任务。沿线的交付物说明下一站为何需要不同工种；同一工单无论从居民路线或全图签收，都只保存一份成绩。[Valve 的游戏介绍](https://store.steampowered.com/app/620/Portal_2/) · [Draknek 的游戏介绍](https://store.steampowered.com/app/1052990/A_Monsters_Expedition/)

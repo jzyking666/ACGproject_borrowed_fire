@@ -1,3 +1,4 @@
+import { relayIndex, relayPosition } from './street-route';
 import { validLoom } from './grid-loom';
 import { validTide } from './tide-dispatch';
 import type { ShiftDraft } from './storage';
@@ -10,7 +11,7 @@ export type JobKey = `${Trade}-${number}`;
 export const jobKey = (trade: Trade, index: number): JobKey => `${trade}-${index}`;
 export interface JobRecord { done: boolean; seconds: number; actions: number; hints: number; values?: number[] }
 export interface CampaignProgress {
-  selected: number; last?: JobKey;
+  selected: number; last?: JobKey; routeJob?: JobKey;
   jobs: Partial<Record<JobKey, JobRecord>>;
   sites: Record<string, ShiftDraft>;
   returned: number[];
@@ -41,8 +42,11 @@ export function districtOpen(p: CampaignProgress, district: number): boolean {
 export const feedNames = (d: number): readonly number[] => FEEDS[d];
 export const signedCount = (p: CampaignProgress) => Object.values(p.jobs).filter(j => j?.done).length;
 export function canWork(p: CampaignProgress, trade: Trade, index: number) {
-  if (!Number.isInteger(index) || index < 0 || index >= SECTOR_COUNT || !districtOpen(p, Math.floor(index / 6))) return false;
-  return trade !== 'field' || index !== SECTOR_COUNT - 1 || signedCount(p) >= SECTOR_COUNT * TRADES.length - 1;
+  if (!Number.isInteger(index) || index < 0 || index >= SECTOR_COUNT) return false;
+  if (trade === 'field' && index === SECTOR_COUNT - 1 && signedCount(p) < SECTOR_COUNT * TRADES.length - 1) return false;
+  if (districtOpen(p, Math.floor(index / 6))) return true;
+  const station = relayIndex(trade,index);
+  return station >= 0 && station <= relayPosition(p);
 }
 export function signJob(p: CampaignProgress, trade: Trade, index: number) {
   if (!canWork(p, trade, index)) return false;
@@ -92,5 +96,10 @@ export function readCampaign(value: unknown, draftOK: (v: unknown, i: number) =>
   if (typeof value.selected === 'number' && districtOpen(state, value.selected)) state.selected = value.selected;
   const last = readJob(value.last);
   if (last && canWork(state, last.trade, last.index)) state.last = jobKey(last.trade,last.index);
+  if (value.routeJob !== undefined) {
+    const station=last ? relayIndex(last.trade,last.index) : -1;
+    if (typeof value.routeJob === 'string' && value.routeJob === state.last && station >= 0 && station <= relayPosition(state)) state.routeJob=state.last;
+    else invalid();
+  }
   return state;
 }

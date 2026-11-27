@@ -1,10 +1,13 @@
+import { ROUTE_EN } from './street-route';
+import { TRAM_EN } from './last-tram';
+import { TICKET_EN } from './tram-ticket';
 import { CONTENT_EN } from './locale-content';
 import { UI_EN } from './locale-ui';
 
 export type Language = 'zh-CN' | 'en';
 
 let current: Language = 'zh-CN';
-const words = new Map(Object.entries({ ...CONTENT_EN, ...UI_EN }));
+const words = new Map(Object.entries({ ...CONTENT_EN, ...UI_EN, ...TRAM_EN, ...TICKET_EN, ...ROUTE_EN }));
 const translatable = /[\p{Script=Han}，。、：；？！「」（）]/u;
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // Longest first so a full sentence wins over a word or a board symbol.

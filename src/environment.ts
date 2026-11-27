@@ -5,6 +5,9 @@ import type { Level } from './levels';
 import type { ReceiverState } from './engine';
 import { batchStaticBoxes } from './batching';
 import { NightWindows } from './night-windows';
+import { TramPlatform } from './tram-platform';
+import { tramStopById, TRAM_BASE } from './last-tram';
+import type { Simulation } from './engine';
 const box = new THREE.BoxGeometry(1, 1, 1);
 const random = (i: number) => { const n = Math.sin(i * 127.1 + 19.7) * 43758.5453; return n - Math.floor(n); };
 
@@ -23,6 +26,7 @@ export class EnvironmentArt {
   private glassLights: THREE.MeshStandardMaterial[] = [];
   private windows: THREE.MeshStandardMaterial[] = [];
   private nightWindows?: NightWindows;
+  private tram?: TramPlatform;
   private textures: THREE.Texture[] = [];
   private palette = new Map<string, THREE.MeshStandardMaterial>();
   batching = { instances: 0, batches: 0, saved: 0 };
@@ -43,11 +47,12 @@ export class EnvironmentArt {
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
     this.group.traverse(o => { if (o instanceof THREE.Mesh || o instanceof THREE.Line) { if (o instanceof THREE.InstancedMesh) o.dispose(); if (o.geometry !== box) geometries.add(o.geometry); (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => materials.add(m)); } });
     geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); this.textures.forEach(t => t.dispose());
-    this.nightWindows = undefined;
+    this.nightWindows = undefined; this.tram = undefined;
     this.flowers = []; this.fan = undefined; this.mobile = undefined; this.glassLights = []; this.textures = []; this.leaves = []; this.leafBatches = []; this.windows = []; this.group.clear(); this.sky = undefined; this.rain = undefined; this.palette.clear();
   }
   build(level: Level) {
     this.clear();
+    const tramStop = tramStopById(level.id);
     const theme = level.theme ?? (level.id < 3 ? 'archive' : level.id < 5 ? 'garden' : 'foundry');
     const prismatic = level.mirrors.some(m => m.kind === 'prism');
     const garden = theme === 'garden', accent = garden ? 0xa7d6a5 : theme === 'foundry' ? 0xe3aa68 : 0x93b6d6;
@@ -74,7 +79,7 @@ export class EnvironmentArt {
       this.block(x, -2.2, 5.04, .52, .7, .025, light);
       this.block(x, -.85, 5.03, .85, .08, .07, steel);
     }
-    this.nightWindows = new NightWindows(level, theme); this.group.add(this.nightWindows.group);
+    if (!tramStop) { this.nightWindows = new NightWindows(level, theme); this.group.add(this.nightWindows.group); }
     for (let i = 0; i < 28; i++) {
       const x = (random(i + 1) - .5) * 70, z = -12 - random(i + 44) * 24;
       const height = 5 + random(i + 8) * 13;
@@ -84,6 +89,13 @@ export class EnvironmentArt {
       }
     }
     const street = new THREE.Mesh(new THREE.PlaneGeometry(220, 220), this.material(0x15292d, .3)); street.rotation.x = -Math.PI / 2; street.position.y = -7; this.group.add(street);
+    if (tramStop) {
+      this.tram = new TramPlatform(level.id - TRAM_BASE, translateText(tramStop.place), this.createCanvas);
+      this.textures.push(this.tram.nameplate);
+      this.group.add(this.tram.group);
+      this.finishWeather(accent);
+      return;
+    }
     // A greenhouse behind the roof establishes a destination and large, curved silhouettes.
     for (const z of [-5.4, -7.3, -9.2]) {
       this.branch([[-6.4, -.3, z], [-5.3, 2.6, z], [0, 4, z], [5.3, 2.6, z], [6.4, -.3, z]], .065, steel);
@@ -167,6 +179,9 @@ export class EnvironmentArt {
       const beam = new THREE.Mesh(new THREE.PlaneGeometry(.6, 7), new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: .045, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
       beam.position.set(-4 + i * 4, 1, -6); beam.rotation.z = -.45; this.group.add(beam);
     }
+    this.finishWeather(accent);
+  }
+  private finishWeather(accent: number) {
     this.rain = new THREE.InstancedMesh(box, new THREE.MeshBasicMaterial({ color: 0xa2c9cb, transparent: true, opacity: .13, depthWrite: false }), 140); this.rain.frustumCulled = false; this.group.add(this.rain);
     const rim = new THREE.PointLight(accent, 12, 20, 2); rim.position.set(-5, 4, -6); this.group.add(rim);
     this.windows = [...new Set(this.windows)];
@@ -189,7 +204,8 @@ export class EnvironmentArt {
     const chain = new THREE.Mesh(new THREE.CylinderGeometry(.012, .012, 2.4, 5), brass); chain.position.set(0, 2.6, 0); this.mobile.add(chain);
     this.group.add(this.mobile);
   }
-  update(time: number, motion: boolean, highQuality: boolean, powered: number, readings?: Readonly<Record<string, ReceiverState>>, simulationTime = time) {
+  update(time: number, motion: boolean, highQuality: boolean, powered: number, readings?: Readonly<Record<string, ReceiverState>>, simulationTime = time, simulation?: Simulation) {
+    if (simulation) this.tram?.update(simulation, motion, time);
     if (readings) this.nightWindows?.update(simulationTime, motion, readings);
     if (this.sky) this.sky.uniforms.time.value = motion ? time : 0;
     this.flowers.forEach((flower, i) => { const crown = flower.userData.crown as THREE.Group; crown.scale.setScalar(.4 + powered * .6); crown.rotation.y = motion ? Math.sin(time * .15 + i) * .1 : 0; });

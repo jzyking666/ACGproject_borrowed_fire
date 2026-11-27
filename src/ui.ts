@@ -1,4 +1,7 @@
-import { restoredSectors, signedCount } from './campaign-progress';
+import { chapterFor } from './chapters';
+import { TRAM_STOPS } from './last-tram';
+import { STREET_ROUTE, relayPosition } from './street-route';
+import { nextNightRoom } from './tram-ticket';
 import type { SaveData } from './storage';
 
 // Original mark: an interrupted circuit, closed by a lightning-shaped bridge.
@@ -47,23 +50,42 @@ const mirrorPlate = `<svg class="cover-plate" viewBox="0 0 156 106" fill="none" 
   </g>
 </svg>`;
 
+function coverLead(data: SaveData) {
+  if (data.checkpoint && data.checkpoint.level >= 12) {
+    const chapter = chapterFor(data.checkpoint.level);
+    return {action:'continue', label:'继续夜班', section:chapter.short, progress:'夜班交接',
+      marks:Array.from({length:chapter.end-chapter.start}, (_,i)=>!!data.records[chapter.start+i])};
+  }
+  const finished = Array.from({length:12}, (_,i) => !!data.records[i]);
+  if (nextNightRoom(data) !== undefined) {
+    const label = data.checkpoint || finished.some(Boolean) || data.unlocked ? '继续夜班' : '开始夜班';
+    return {action:'continue', label, section:'主线故事', progress:'夜班交接', marks:finished};
+  }
+  if (data.tram.completed < TRAM_STOPS.length) {
+    return {action:'tram',label:'末班车',section:'夜班后记',progress:'车票',marks:TRAM_STOPS.map((_,i)=>i<data.tram.completed)};
+  }
+  const station = relayPosition(data.campaign);
+  return {action:'street-relay',label:station===STREET_ROUTE.length?'重读签收回条':'街名接力',
+    section:'天亮之前',progress:'沿线居民',marks:STREET_ROUTE.map((_,i)=>i<station)};
+}
+
 export function menuMarkup(data: SaveData) {
-  const districts = Array.from({ length: 8 }, (_, i) => restoredSectors(data.campaign, i));
-  const count = signedCount(data.campaign);
+  const lead = coverLead(data);
   return `<section class="shift-cover" aria-labelledby="cover-title">
     <header class="cover-mast">${MARK}<span>第七区维修组</span></header>
     <div class="cover-art"><h1 id="cover-title" data-localized>${data.settings.language === 'en' ? 'Borrowed <span>Fire</span>' : '借<span>火</span>'}</h1>${mirrorPlate}</div>
     <p class="cover-subtitle">末班维修员</p>
     <div class="cover-contents">
-      <button class="cover-campaign" data-action="campaign" aria-label="天亮之前 · 复网战役">
-        <span>天亮之前</span><small>复网战役</small><i aria-hidden="true">→</i>
+      <button class="cover-campaign" data-action="${lead.action}" aria-label="${lead.label}">
+        <span>${lead.label}</span><small>${lead.section}</small><i aria-hidden="true">→</i>
       </button>
-      <div class="cover-progress" aria-label="复网进度，已签收 ${count} 项，共 144 项">
-        <div class="cover-marks" aria-hidden="true">${districts.map(n => `<i style="--restored:${n/6*100}%"></i>`).join('')}</div>
-        <span>工单</span><b>${count} / 144</b>
+      <div class="cover-progress"><div class="cover-marks" aria-hidden="true">${lead.marks.map(done=>`<i style="--restored:${done?100:0}%"></i>`).join('')}</div>
+        <span>${lead.progress}</span><b>${lead.marks.filter(Boolean).length} / ${lead.marks.length}</b></div>
+      <div class="cover-side">
+        <button data-action="campaign" aria-label="天亮之前 · 复网战役">天亮之前<small>沿线居民</small></button>
+        ${lead.action === 'tram' ? '' : '<button data-action="tram">末班车<small>夜班后记</small></button>'}
       </div>
       <div class="cover-shifts">
-        <button data-action="continue">${data.checkpoint ? '继续夜班' : '开始夜班'}</button>
         <button data-action="repairs">返修值班台</button>
         <button data-action="levels">选择机房</button>
       </div>

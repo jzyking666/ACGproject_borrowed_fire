@@ -1,3 +1,4 @@
+import { STREET_ROUTE, relayCopy, relayEnclosure, relayIndex, relayPosition } from './street-route';
 import { districtArt, districtMap, DISTRICTS, CAMPAIGN_EPILOGUE } from './district-atlas';
 import { STREET_NOTES } from './street-ledger';
 import { SECTORS } from './field-service';
@@ -34,6 +35,7 @@ export class CampaignDesk {
     const done = signedCount(p);
     const resume = last && !p.jobs[p.last!]?.done ? btn('camp-resume', `继续 · ${SECTORS[Math.floor(last.index/6)][last.index%6]}`, true) : '';
     const dispatch = `<aside class="camp-dispatch">
+      <section class="relay-invitation"><h2>${relayCopy.name}</h2><p>${relayCopy.pitch}</p>${btn('camp-route',relayCopy.enter,true)} <small>${relayPosition(p)} / 8</small></section>
       <h2>当班线路</h2>
       <p class="camp-lead">旧区最后一张街名图少了一块。沿线找回八个街区的门牌，赶在交班前印出总图。</p>
       <dl><dt>可检修街区</dt><dd>${open || '全线已复网'}</dd><dt>工单</dt><dd class="camp-counter">已签收 ${done} / 144 项</dd></dl>
@@ -41,6 +43,27 @@ export class CampaignDesk {
     </aside>`;
     this.paper('天亮之前', `<div class="camp-map-spread">${districtMap(selected,status)}${dispatch}</div>`,
       btn('back','返回') + btn('camp-log','值班簿') + btn('camp-mail',`退信寻址 · ${p.returned.length}/8`) + (done===144 ? btn('camp-ending','重读终章') : '') + (resume || btn('district-'+selected, '前往'+DISTRICTS[selected].title,true)), 'camp-map');
+  }
+  route(station = relayPosition(this.state())) {
+    const p = this.state(), position = relayPosition(p);
+    if (station === STREET_ROUTE.length && position === station) {
+      this.paper(relayCopy.ending,`<div class="camp-last">${districtArt(7,true)}<p>${relayCopy.finalText}</p></div>`,
+        btn('camp-map','全区地图',true) + btn('route-stop-0',relayCopy.enter), 'camp-route-ending');
+      return;
+    }
+    if (!Number.isInteger(station) || station < 0 || station >= STREET_ROUTE.length || station > position) return;
+    const stop=STREET_ROUTE[station], place=SECTORS[station][stop.index%6], area=DISTRICTS[station];
+    const title=stop.trade==='field' ? TRADE_NAME.field : desks[stop.trade].title(stop.index);
+    const stops=STREET_ROUTE.map((_,i)=>`<button data-action="route-stop-${i}" ${i>position?'disabled':''} ${i===station?'aria-current="step"':''}><b>${i+1}</b> ${DISTRICTS[i].title}${i<position?' ✓':''}</button>`).join('');
+    const body=`<div class="relay-slip"><aside class="relay-itinerary">${stops}</aside><article><header><small>${station+1} / 8 · ${place}</small><h2>${area.resident}</h2></header><figure class="relay-enclosed">${relayEnclosure(station)}<figcaption><small>${relayCopy.caption}</small><strong>${stop.carrying}</strong></figcaption></figure><p class="relay-request">${stop.request}</p><small>${TRADE_NAME[stop.trade]} · ${title}</small>${station<position?`<p class="relay-reply">${stop.reply}</p>`:''}</article></div>`;
+    const filed=station<position, last=station===STREET_ROUTE.length-1;
+    const advance=filed ? btn(last?'camp-route':'route-stop-'+(station+1),last?relayCopy.reread:relayCopy.next,true) : '';
+    this.paper(relayCopy.name,body,btn('camp-map','全区地图')+btn('route-job-'+station,filed?relayCopy.replay:relayCopy.start,!filed)+advance,'camp-route');
+  }
+  jobBack() {
+    const p=this.state(), spec=readJob(p.last);
+    if (spec && (p.routeJob===p.last || !districtOpen(p,Math.floor(spec.index/6)))) this.route(relayIndex(spec.trade,spec.index));
+    else this.district(p.selected);
   }
   district(d: number) {
     const p=this.state();
@@ -59,10 +82,13 @@ export class CampaignDesk {
     const downstream=DISTRICTS.filter(a=>feedNames(a.id).includes(d));
     this.paper(area.title, `<div class="camp-letter">${districtArt(d,restored===6)}<div><small>${area.resident}</small><p>${restored===6?area.restored:area.arrival}</p></div></div><p class="camp-foot">${restored}/6 地段已复网 · 每行三项可任选先后。${downstream.length?'下游为'+downstream.map(a=>a.title).join('、')+'。':''}</p><div class="camp-work"><div class="camp-colheads" aria-hidden="true"><span>地段</span>${TRADES.map(t=>`<span>${TRADE_NAME[t]}</span>`).join('')}</div>${list}</div>`,btn('camp-map','全区地图')+btn('camp-log','值班簿'),'camp-district');
   }
-  start(trade: Trade,index: number) {
+  start(trade: Trade,index: number, fromRoute = false) {
     const p=this.state(); if (!canWork(p,trade,index)) return;
     const k=jobKey(trade,index), j=jobOf(p,k);
-    p.selected=Math.floor(index/6); p.last=k; this.save();
+    const d=Math.floor(index/6);
+    if (districtOpen(p,d)) p.selected=d;
+    if (fromRoute || !districtOpen(p,d)) p.routeJob=k; else delete p.routeJob;
+    p.last=k; this.save();
     if (trade==='field') { this.board=undefined; this.enterSite(index); return; }
     const f=desks[trade];
     this.board={trade,index,values:j.values ? [...j.values] : f.initial(index),history:[],frame:0,hint:''};
@@ -73,13 +99,20 @@ export class CampaignDesk {
     const f=desks[b.trade], frames=f.frames?.(b.index,b.values) ?? 0;
     const ok=f.solved(b.index,b.values), place=SECTORS[Math.floor(b.index/6)][b.index%6];
     this.paper(f.title(b.index), `<p class="camp-meta">${DISTRICTS[Math.floor(b.index/6)].title} / ${place} / ${f.name}</p>${f.render(b.index,b.values,b.frame)}${b.hint?`<p class="camp-hint" role="status">${b.hint}</p>`:''}`,
-      btn('camp-district','回街区')+btn('camp-undo','撤销',false,!b.history.length)+btn('camp-reset','复原')+btn('camp-hint','提示')+(frames?btn('camp-prev','上一拍')+btn('camp-next','下一拍'):'')+btn('camp-sign',ok?'签收工单':'待验收',true,!ok),'camp-board');
+      (this.state().routeJob===jobKey(b.trade,b.index)?btn('camp-job-back',relayCopy.resume):btn('camp-district','回街区'))+btn('camp-undo','撤销',false,!b.history.length)+btn('camp-reset','复原')+btn('camp-hint','提示')+(frames?btn('camp-prev','上一拍')+btn('camp-next','下一拍'):'')+btn('camp-sign',ok?'签收工单':'待验收',true,!ok),'camp-board');
   }
   finish(t:Trade,i:number) {
     const p=this.state(), d=Math.floor(i/6), fresh=signJob(p,t,i);
-    p.selected=d;
+    if (districtOpen(p,d)) p.selected=d;
     this.save(); this.seal();
     if (signedCount(p)===144 && fresh) { this.ending(); return; }
+    const station=relayIndex(t,i);
+    if (station>=0 && p.jobs[jobKey(t,i)]?.done && (p.routeJob===jobKey(t,i) || !districtOpen(p,d))) {
+      const stop=STREET_ROUTE[station], last=station===STREET_ROUTE.length-1;
+      this.paper(stop.gift,`<div class="camp-letter">${districtArt(d,false)}<div><small>${DISTRICTS[d].resident}</small><p>${stop.reply}</p></div></div><p class="relay-cargo"><b>${relayCopy.gift}</b> ${stop.gift}</p>`,
+        btn('camp-map','全区地图')+btn(last?'camp-route':'route-stop-'+(station+1),last?relayCopy.finish:relayCopy.next,true), 'camp-receipt');
+      return;
+    }
     const complete=TRADES.every(k=>p.jobs[jobKey(k,i)]?.done);
     const restored=restoredSectors(p,d), area=DISTRICTS[d];
     const next=TRADES.find(k=>!p.jobs[jobKey(k,i)]?.done);
@@ -110,7 +143,15 @@ export class CampaignDesk {
   }
   handle(a:string,screen:string): boolean {
     const p=this.state();
-    if (a==='camp-mail') this.mailbag();
+    if (a==='camp-route') this.route();
+    else if (a==='camp-job-back') this.jobBack();
+    else if (/^route-stop-[0-7]$/.test(a)) this.route(Number(a.at(-1)));
+    else if (/^route-job-[0-7]$/.test(a) && screen==='camp-route') {
+      const station=Number(a.at(-1));
+      const stop=STREET_ROUTE[station];
+      if (station<=relayPosition(p)) this.start(stop.trade,stop.index,true);
+    }
+    else if (a==='camp-mail') this.mailbag();
     else if (a.startsWith('mail-')) return this.mail.handle(a,screen);
     else if (a==='camp-map') this.map();
     else if (a==='camp-district') this.district(p.selected);
@@ -122,7 +163,7 @@ export class CampaignDesk {
     else if (a==='camp-ending') this.ending();
     else if (/^district-[0-7]$/.test(a)) this.district(Number(a.slice(9)));
     else if (a.startsWith('job-') || a==='camp-resume') {
-      const spec=readJob(a==='camp-resume'?p.last:a.slice(4)); if(spec)this.start(spec.trade,spec.index);
+      const spec=readJob(a==='camp-resume'?p.last:a.slice(4)); if(spec)this.start(spec.trade,spec.index,a==='camp-resume' && p.routeJob===p.last);
     } else if(screen==='camp-board' && this.board && (a.startsWith('board-') || a.startsWith('camp-'))) {
       const b=this.board, f=desks[b.trade], j=jobOf(p,jobKey(b.trade,b.index));
       if(a==='camp-sign') { if(f.solved(b.index,b.values))this.finish(b.trade,b.index); return true; }

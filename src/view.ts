@@ -1,3 +1,4 @@
+import { tramStopById } from './last-tram';
 import { translateText } from './locale';
 import { enamelInk, signFaces } from './sign-lettering';
 import { EnvironmentArt } from './environment';
@@ -480,7 +481,10 @@ export class View {
   }
   private updateCamera() {
     const aspect = this.width / this.height;
-    const span = this.presentation === 'wardrobe' ? 3.7 : Math.max(13.7, 20 / aspect) / this.zoom;
+    const platform = this.presentation === 'game' && !this.tacticalView && this.level && tramStopById(this.level.id);
+    // Frame the carriage on the far track in the same shot as the playable board.
+    this.target.z = platform ? -1.85 : 0;
+    const span = this.presentation === 'wardrobe' ? 3.7 : Math.max(platform ? 15.2 : 13.7, 20 / aspect) / this.zoom;
     this.camera.left = -span * aspect / 2; this.camera.right = span * aspect / 2;
     this.camera.top = span / 2; this.camera.bottom = -span / 2; this.camera.near = .1; this.camera.far = 150;
     const tactical = this.tacticalView && this.presentation === 'game';
@@ -492,13 +496,17 @@ export class View {
   toggleTactical() { this.tacticalView = !this.tacticalView; this.updateCamera(); }
   movement(dx: number, dy: number) { const yaw = this.tacticalView ? 0 : this.yaw; return { x: dx * Math.cos(yaw) + dy * Math.sin(yaw), y: -dx * Math.sin(yaw) + dy * Math.cos(yaw) }; }
   zoomBy(delta: number) { this.zoom = THREE.MathUtils.clamp(this.zoom + delta, .75, 1.3); this.updateCamera(); }
-  resetCamera() { this.tacticalView = false; this.yaw = .54; this.zoom = 1; this.updateCamera(); }
+  resetCamera() {
+    this.tacticalView = false;
+    this.yaw = this.level && tramStopById(this.level.id) ? .25 : .54;
+    this.zoom = 1; this.updateCamera();
+  }
   setQuality(high: boolean) { this.highQuality = high; this.renderer.setPixelRatio(high ? Math.min(devicePixelRatio, 1.5) : 1); this.bloom.enabled = high; this.resize(); }
   kick(strength = .65) { this.impulse.add(strength); }
   update(sim: Simulation, dt: number, observe: boolean, hint: boolean, menu = false, motion = true, probeIndex = 0) {
     this.clock += dt;
     this.art.group.visible = this.presentation !== 'wardrobe';
-    if (this.art.group.visible) this.art.update(this.clock, motion, this.highQuality, sim.level.receivers.filter(r => sim.receivers[r.id].charge > 0).length / sim.level.receivers.length, sim.receivers, sim.elapsed);
+    if (this.art.group.visible) this.art.update(this.clock, motion, this.highQuality, sim.level.receivers.filter(r => sim.receivers[r.id].charge > 0).length / sim.level.receivers.length, sim.receivers, sim.elapsed, sim);
     this.updateEchoes(sim);
     const wardrobe = this.presentation === 'wardrobe';
     this.root.visible = this.dynamic.visible = !wardrobe; this.player.scale.setScalar(wardrobe ? 1.6 : 1);

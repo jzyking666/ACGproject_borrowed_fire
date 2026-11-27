@@ -2,10 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { scores, scoreNotes, type SoundScene } from '../src/night-score';
 import { Sound } from '../src/audio';
+import { previewTracks } from '../src/preferences-ui';
 
 const scenes = Object.keys(scores) as SoundScene[];
 
-test('all seven written scores fit their meter and resolve on the tonic through the bridge', () => {
+test('all written scores have mixer previews, fit their meter and resolve on the tonic through the bridge', () => {
+  assert.deepEqual(previewTracks.map(t => t.scene).sort(), [...scenes].sort());
   for (const scene of scenes) {
     const s = scores[scene], width = s.backing.length;
     assert.equal(s.bars.length, 8); assert.equal(s.bridge.length, 8); assert.equal(s.answers.length, 2);
@@ -35,6 +37,15 @@ test('power adds musical voices to the running circuit without retuning its melo
   }
   assert.ok(additional > 8);
   assert.equal(scoreNotes('harbor',4,0,0)[0].midi - scoreNotes('harbor',0,0,0)[0].midi, 5);
+});
+test('tram lamps bring in the axle rhythm and then sustained harmony, keeping the waiting melody audible', () => {
+  const phrase = (load: number) => Array.from({length:48}, (_,step) => scoreNotes('tram',0,step,load)).flat();
+  const dark = phrase(0), streetLit = phrase(.5), allLit = phrase(1);
+  assert.deepEqual([...new Set(dark.map(n => n.instrument))].sort(), ['bass','reed']);
+  assert.ok(streetLit.some(n => n.instrument === 'wood') && streetLit.some(n => n.instrument === 'wire'));
+  assert.equal(streetLit.some(n => n.instrument === 'pad'), false);
+  assert.ok(allLit.some(n => n.instrument === 'pad'));
+  assert.deepEqual(allLit.filter(n => n.instrument === 'reed'), dark.filter(n => n.instrument === 'reed'));
 });
 test('audio settings, transitions and a missing audio device remain safe before the first gesture', () => {
   const sound = new Sound();

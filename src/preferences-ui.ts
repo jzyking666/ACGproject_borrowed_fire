@@ -6,7 +6,7 @@ export const previewTracks: readonly {scene:SoundScene; name:Pair}[] = [
   {scene:'menu',name:['夜班封面','Night shift']}, {scene:'room',name:['机房供电','Powered room']},
   {scene:'harbor',name:['码头班表','Harbour']}, {scene:'workshop',name:['配线织盘','Loom']},
   {scene:'post',name:['退信邮袋','Mailbag']}, {scene:'paper',name:['值班文书','Paperwork']},
-  {scene:'story',name:['夜班电台','Radio']},
+  {scene:'story',name:['夜班电台','Radio']}, {scene:'tram',name:['末班车','Last tram']},
 ];
 export function preferencesPage(p: Preferences, full: boolean, canFullscreen: boolean, trackIndex:number, listening?: Direction) {
   const t = (zh: string, en: string) => p.language === 'en' ? en : zh;

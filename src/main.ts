@@ -1,3 +1,6 @@
+import { TRAM_BASE, TRAM_STOPS, tramStopById } from './last-tram';
+import { nextNightRoom, tramTicket, tramSignalText } from './tram-ticket';
+import './tram-ticket.css';
 import { circuitReading, forecast, forecastFindings, forecastMessage, TrialAnchor, type Forecast, type ForecastFinding, type ForecastFrame } from './forecast';
 import './style.css';
 import './district-atlas.css';
@@ -24,7 +27,7 @@ import { repairList, repairLetter, signedReply } from './repair-desk';
 import './repair-desk.css';
 import { LensPanel } from './lens-panel';
 import { CampaignDesk } from './campaign-ui';
-import { canWork, countPlay, jobKey, jobOf } from './campaign-progress';
+import { canWork, districtOpen, countPlay, jobKey, jobOf } from './campaign-progress';
 import { fieldById, FIELD_BASE } from './field-service';
 import { passageReport, type PassageReport } from './passage';
 import { commissionDiagram } from './commission-diagram';
@@ -108,6 +111,7 @@ function boot() {
   let lastInput = performance.now(), clockSave = 0;
   const inputNow = () => { lastInput = performance.now(); };
   for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown']) document.addEventListener(type, inputNow, { passive: true });
+  let selectedTram = 0;
   let selectedEcho = 0;
   let echoPeriodStep = .05;
   const markupCache = new Map<string, string>();
@@ -133,10 +137,11 @@ function boot() {
     }
     const cue = value === 'camp-board' ? (data.campaign.last?.startsWith('tide-') ? 'harbor' : 'workshop')
       : value === 'menu' ? 'menu' : value === 'story' ? 'story'
-      : ['camp-mail','camp-address','letter','camp-ending','camp-receipt'].includes(value) ? 'post'
+      : ['camp-mail','camp-address','letter','tram-receipt','camp-route','camp-route-ending','camp-ending','camp-receipt'].includes(value) ? 'post'
       : ['', 'forecast','commission','lens','photo','echo-editor'].includes(value) ? 'room' : 'paper';
     const roomDistrict = sim.level.commission ? Math.floor((sim.level.id-FIELD_BASE)/6) : CHAPTERS.indexOf(chapterFor(sim.level.id));
-    sound.setScene(cue, cue === 'room' ? roomDistrict : data.campaign.selected);
+    if (cue === 'room' && tramStopById(sim.level.id)) sound.setScene('tram',sim.level.id-TRAM_BASE);
+    else sound.setScene(cue, cue === 'room' ? roomDistrict : data.campaign.selected);
     screen = value; keys.clear(); app.dataset.screen = value || 'playing';
     document.querySelector<HTMLElement>('.topbar')!.inert = !!value && value !== 'menu';
     $('hud').inert = !!value;
@@ -161,36 +166,68 @@ function boot() {
     $('overlay').innerHTML = menuMarkup(data);
   }
   function load(id: number, draft?: ShiftDraft, order?: RepairOrder) {
+    const tram = tramStopById(id);
+    if (tram && id - TRAM_BASE > data.tram.completed) return;
     const site = fieldById(id), index = id - FIELD_BASE;
     if (site && !canWork(data.campaign,'field',index)) { toast('先为这个街区接通上游线路。'); return; }
     checkpoint(); sound.unlock(); activeStory = undefined; prediction = undefined; lens = undefined; trial.clear(); history.clear();
-    repair = order; sim = order ? createRepair(order) : new Simulation(site ?? LEVELS[id]); hintCount = 0; probe = 0; templateMirror=undefined;
-    if (site) { data.campaign.last=jobKey('field',index); data.campaign.selected=Math.floor(index/6); jobOf(data.campaign,data.campaign.last); campaignOrigin='menu'; }
+    repair = order; sim = order ? createRepair(order) : new Simulation(site ?? tram?.level ?? LEVELS[id]); hintCount = 0; probe = 0; templateMirror=undefined;
+    if (site) {
+      const key = jobKey('field',index), area = Math.floor(index/6);
+      data.campaign.last = key;
+      if (districtOpen(data.campaign,area)) {
+        data.campaign.selected = area;
+        if (data.campaign.routeJob !== key) delete data.campaign.routeJob;
+      } else data.campaign.routeJob = key;
+      jobOf(data.campaign,key); campaignOrigin='menu';
+    }
     let repaired = false;
     if (draft) { repaired = sim.restore(draft.snapshot); hintCount = draft.hintCount; }
     hasRun = true; observe = false; autoTimer = 0; modalHistory.length = 0; view.load(sim.level); view.resetCamera();
     $('circuit-feedback').textContent = ''; feedbackUntil = 0;
-    const roomNumber = String(site ? index % 6 + 1 : id + 1).padStart(2, '0');
+    const roomNumber = String(tram ? id - TRAM_BASE + 1 : site ? index % 6 + 1 : id + 1).padStart(2, '0');
     $('room-index').textContent = roomNumber;
     $('interact-action').textContent = site ? '转镜 / 开关电源' : '拿取 / 放下';
     $('room-name').textContent = order?.title ?? sim.level.name; $('room-subtitle').textContent = sim.level.subtitle;
-    $('station-status').textContent = site ? `七区复网 · ${site.subtitle}` : order ? `返修 · ${order.client}` : `第七区 · ${chapterFor(id).short}`;
-    $('objective').textContent = site ? '将每路送到指定端口与色相，保持甲路实载供电后抵达出口。' : sim.level.repeats === 1 ? '让接收环通电，然后抵达出口。' : `让同一颗脉冲重复供电，验证所有接收环的循环。${sim.level.offGrid ? '完成后关闭发射器，再抵达出口。' : '保持供电并抵达出口。'}`;
+    $('station-status').textContent = tram ? '末班车 · ' + tram.place : site ? `七区复网 · ${site.subtitle}` : order ? `返修 · ${order.client}` : `第七区 · ${chapterFor(id).short}`;
+    $('objective').textContent = tram ? tram.level.lesson : site ? '将每路送到指定端口与色相，保持甲路实载供电后抵达出口。' : sim.level.repeats === 1 ? '让接收环通电，然后抵达出口。' : `让同一颗脉冲重复供电，验证所有接收环的循环。${sim.level.offGrid ? '完成后关闭发射器，再抵达出口。' : '保持供电并抵达出口。'}`;
     $('entry-number').textContent = ` / ${roomNumber}`;
     $('briefing-text').textContent = sim.level.briefing; $('lesson').textContent = sim.level.lesson;
     $('hint-text').hidden = hintCount === 0; $('hint-text').textContent = sim.level.hints[Math.max(0, hintCount - 1)];
     $('briefing').hidden = hintCount === 0;
     $('world-labels').innerHTML = sim.level.receivers.map((r, i) => `<span data-receiver="${r.id}" class="world-label"><b>${i + 1}</b><span>${r.name}</span></span>`).join('');
     $('receivers').innerHTML = sim.level.receivers.map((r, i) => `<div class="receiver-row" data-status-receiver="${r.id}"><span class="receiver-icon">${i + 1}</span><div><b>${r.name}${r.phase ? `<span class="phase-badge phase-${r.phase}">${r.phase === 'cool' ? '冷 ◇' : '暖 ●'}</span>` : ''}</b><small></small><div class="charge-track"><i></i></div></div><span class="receiver-check"></span></div>`).join('');
-    const intro = site || order ? undefined : sceneFor(id, 'before'), firstVisit = intro && !data.story.seen.includes(intro.id);
+    const intro = tram || site || order ? undefined : sceneFor(id, 'before'), firstVisit = intro && !data.story.seen.includes(intro.id);
     if (intro && firstVisit) data.story.seen.push(intro.id);
     setScreen(''); $('overlay').innerHTML = ''; updateHud(); checkpoint();
-    toast(repaired ? '机房结构更新，冲突装置已移到邻近空位。成绩与解锁保留。' : draft ? '值班断点已恢复' : site ? site.subtitle+' · '+site.name : order ? `报修人 · ${order.client}` : `进入机房 ${String(id + 1).padStart(2, '0')} · ${sim.level.name}`);
+    if (!tram || draft) toast(repaired ? '机房结构更新，冲突装置已移到邻近空位。成绩与解锁保留。' : draft ? '值班断点已恢复' : site ? site.subtitle+' · '+site.name : order ? `报修人 · ${order.client}` : `进入机房 ${String(id + 1).padStart(2, '0')} · ${sim.level.name}`);
     if (intro && !draft && data.settings.dialogue && !data.records[id] && firstVisit) playStory(intro, resumeGame);
   }
   function continueShift() {
     if (data.checkpoint) load(data.checkpoint.level, { snapshot: data.checkpoint, hintCount: data.hintCount ?? 0 });
-    else load(data.unlocked);
+    else {
+      const next = nextNightRoom(data);
+      if (next === undefined) showTramTicket();
+      else load(next);
+    }
+  }
+  function showTramTicket(index = Math.min(data.tram.completed, TRAM_STOPS.length - 1)) {
+    if (!TRAM_STOPS[index] || index > data.tram.completed) return;
+    selectedTram = index;
+    const label = index < data.tram.completed ? '重访本站' : data.tram.draft ? '继续修车' : '前往站台';
+    modal('末班车', tramTicket(data,index), button('back','返回') + button('tram-ride',label,'primary'), 'tram');
+  }
+  function tramReceipt() {
+    const i = sim.level.id - TRAM_BASE, stop = TRAM_STOPS[i];
+    if (i === data.tram.completed) {
+      data.tram.completed++;
+      delete data.tram.draft;
+      persist();
+    }
+    const last = i === TRAM_STOPS.length-1;
+    modal(last ? '末班车已发车' : '末班车已进站',
+      `<div class="tram-arrival"><small>${stop.place} · ${stop.caller}</small><p>${stop.receipt}</p></div>`,
+      button('menu','返回主菜单') + button('tram','回看车票') + (last ? button('street-relay','沿线居民','primary') : button('tram-next','查看下一站','primary')), 'tram-receipt');
   }
   function repairs() {
     modal('返修值班台', repairList(data), button('back', '返回'), 'repairs');
@@ -210,13 +247,13 @@ function boot() {
     const focusedAction = screen === kind ? (document.activeElement as HTMLElement | null)?.dataset.action : undefined;
     const scrollTop = screen === kind ? $('overlay').querySelector('.dialog-body')?.scrollTop ?? 0 : 0;
     if (screen !== kind) modalHistory.push(screen);
-    const closeAction = kind === 'pause' ? 'resume' : kind === 'win' ? 'menu' : kind === 'story' ? 'story-skip' : 'back';
+    const closeAction = kind === 'tram-receipt' ? 'menu' : kind === 'pause' ? 'resume' : kind === 'win' ? 'menu' : kind === 'story' ? 'story-skip' : 'back';
     setScreen(kind); $('overlay').innerHTML = `<section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><header class="dialog-heading"><h1 id="dialog-title">${title}</h1><button class="dialog-close" data-action="${closeAction}" aria-label="关闭${title}">×</button></header><div class="dialog-body">${body}</div><footer class="dialog-actions">${footer}</footer></section>`;
     const dialogBody = $('overlay').querySelector<HTMLElement>('.dialog-body')!;
     requestAnimationFrame(() => {
       if (!dialogBody.isConnected) return;
       const buttons = [...$('overlay').querySelectorAll<HTMLButtonElement>('button:not(:disabled):not(.dialog-close)')];
-      const primary = ['pause','win','story','letter','camp-map','camp-log','camp-receipt','camp-ending'].includes(kind) ? $('overlay').querySelector<HTMLButtonElement>('.dialog-actions .primary') : null;
+      const primary = ['pause','win','story','letter','camp-map','camp-log','camp-receipt','camp-ending','tram','tram-receipt'].includes(kind) ? $('overlay').querySelector<HTMLButtonElement>('.dialog-actions .primary') : null;
       const pickedMirror = kind === 'lens' ? $('overlay').querySelector<HTMLButtonElement>('.lens-choices [aria-pressed="true"]') : null;
       const focused = pickedMirror ?? buttons.find(b => focusedAction && b.dataset.action === focusedAction) ?? primary ?? buttons[0];
       dialogBody.scrollTop = scrollTop;
@@ -257,7 +294,9 @@ function boot() {
       + (sim.level.commission ? button('commission','端口联检图') : '') + (sim.level.echoLimit ? button('echo-editor', '回声调度') : '')
       + button('trial-set-pause', '设置试验点') + (trial.exists ? button('trial-return-pause', '返回试验点') : '') + button('photo','拍照');
     const desk = button('saves','存档管理') + button('ledger','工单') + button('journal','夜班通讯') + button('wardrobe','维修员') + button('settings','设置');
-    const jobs = button('campaign','复网战役') + button('repairs','返修值班台') + button('levels','选择机房') + button('restart',repair ? '重修本单' : '重试本关');
+    const returnToRoute = tramStopById(sim.level.id) ? button('tram','返回车票') :
+      sim.level.commission && data.campaign.routeJob === jobKey('field',sim.level.id-FIELD_BASE) ? button('street-relay','回取件单') : '';
+    const jobs = returnToRoute + button('campaign','复网战役') + button('repairs','返修值班台') + button('levels','选择机房') + button('restart',repair ? '重修本单' : '重试本关');
     modal('暂停', `<p class="pause-location"><b>${repair?.title ?? sim.level.name}</b><span>当前进度已自动保存。</span></p><nav class="pause-menu" aria-label="暂停选项">${group('现场工具',tools)}${group('值班台',desk)}${group('更换任务',jobs)}</nav>`,
       button('menu','返回主菜单') + button('resume','继续','primary'), 'pause');
   }
@@ -337,6 +376,7 @@ function boot() {
     $('hint-text').textContent = sim.level.hints[hintCount - 1]; sound.play('ui'); checkpoint();
   }
   function complete() {
+    if (tramStopById(sim.level.id)) { tramReceipt(); return; }
     if (sim.level.commission) { campaign.finish('field',sim.level.id-FIELD_BASE); return; }
     if (repair) {
       const result = repairResult(repair, sim);
@@ -359,8 +399,8 @@ function boot() {
   function showResult(n: number) {
     const last = sim.level.id === 11 || sim.level.id === 15 || sim.level.id === LEVELS.length - 1;
     const title = sim.level.id === 21 ? '分光温室已交班' : sim.level.id === 17 ? '练习单已归档' : sim.level.id === 15 ? '花园已交班' : sim.level.id === 11 ? '收件人' : sim.level.id === 6 ? '第一班交接完成' : '维修完成';
-    const copy = sim.level.id === 21 ? '两种光路与一份值班表已经留下。下一页，交给下一班自己修改。' : sim.level.id === 17 ? '线路、脚步与等待的时间，都已交给下一班。' : sim.level.id === 15 ? '示教与线路图已留下。下一班可以照着它，把花园接过去。' : sim.level.id === 11 ? '回执已送达。有人接过了这条线路，也有人等你下班。' : `${sim.level.name} · 设备运行正常。`;
-    modal(title, `<div class="result-stars">${stars(n)}</div><p class="dialog-copy">${copy}</p><div class="result-stats"><div><b>${fmt(sim.elapsed)}</b><span>维修用时</span></div><div><b>${sim.hits}</b><span>受击次数</span></div><div><b>${sim.moves}</b><span>装置操作</span></div></div><p class="result-note">完成 ★ · 无伤 ${sim.hits === 0 ? '★' : '☆'} · 未使用提示 ${hintCount === 0 ? '★' : '☆'}</p>${challengeMarkup(true)}`, (last ? button('levels', '夜班记录', 'primary') : button('next', '下一间机房', 'primary')) + (sim.level.id === 11 ? button('echo-wing', '后记：回声花园') : sim.level.id === 15 ? button('practice', '给下一班的练习') : '') + button('journal', '夜班通讯') + button('restart', '重新维修') + button('menu', '返回主菜单'), 'win');
+    const copy = sim.level.id === 21 ? '两种光路与一份值班表已经留下。下一页，交给下一班自己修改。' : sim.level.id === 17 ? '线路、脚步与等待的时间，都已交给下一班。' : sim.level.id === 15 ? '示教与线路图已留下。下一班可以照着它，把花园接过去。' : sim.level.id === 11 ? '回执已送达。有人接过了这条线路，也有人等你下班。' : STORY[sim.level.id].record;
+    modal(title, `<div class="result-stars">${stars(n)}</div><p class="dialog-copy">${copy}</p><div class="result-stats"><div><b>${fmt(sim.elapsed)}</b><span>维修用时</span></div><div><b>${sim.hits}</b><span>受击次数</span></div><div><b>${sim.moves}</b><span>装置操作</span></div></div><p class="result-note">完成 ★ · 无伤 ${sim.hits === 0 ? '★' : '☆'} · 未使用提示 ${hintCount === 0 ? '★' : '☆'}</p>${challengeMarkup(true)}`, (sim.level.id === 11 ? button('tram','去赶末班车','primary') : last ? button('levels', '夜班记录', 'primary') : button('next', '下一间机房', 'primary')) + (sim.level.id === 11 ? button('echo-wing', '后记：回声花园') : sim.level.id === 15 ? button('practice', '给下一班的练习') : '') + button('journal', '夜班通讯') + button('restart', '重新维修') + button('menu', '返回主菜单'), 'win');
   }
   function challengeMarkup(result = false) {
     return `<section class="challenge-list"><h2>可选挑战 <small>不影响通关与星级</small></h2>${challengesFor(sim.level).map(c => {
@@ -395,18 +435,19 @@ function boot() {
     const canSave = hasRun && !sim.won;
     const rows = data.slots.map((slot, i) => {
       const order = slot && REPAIRS.find(r => r.id === slot.repairId);
+      const tram = slot && tramStopById(slot.snapshot.level);
       const field = slot && fieldById(slot.snapshot.level);
-      const title = !slot ? '空存档' : field ? `复网 · ${field.name}` : order ? `返修 · ${order.title}` : `${String(slot.snapshot.level + 1).padStart(2, '0')} ${LEVELS[slot.snapshot.level].name}`;
+      const title = !slot ? '空存档' : tram ? '末班车 · ' + tram.place : field ? `复网 · ${field.name}` : order ? `返修 · ${order.title}` : `${String(slot.snapshot.level + 1).padStart(2, '0')} ${LEVELS[slot.snapshot.level].name}`;
       return `<section class="save-slot"><span class="save-index" aria-hidden="true">${String(i + 1).padStart(2,'0')}</span><div><b>存档 ${i + 1}</b><p>${title}${slot ? ' · ' + fmt(slot.snapshot.elapsed) : ''}</p><small>${slot ? date(slot.savedAt) : '进入机房后可以保存'}</small></div><div class="slot-actions"><button data-action="save-slot-${i}" ${canSave ? '' : 'disabled'}>${slot ? '覆盖' : '保存'}</button><button data-action="load-slot-${i}" ${slot ? '' : 'disabled'}>读取</button><button data-action="delete-slot-${i}" ${slot ? '' : 'disabled'} aria-label="删除存档 ${i + 1}">删除</button></div></section>`;
     }).join('');
-    modal('存档管理', `<div class="autosave-row"><div><b>自动存档</b><p>${data.checkpoint ? `${LEVELS[data.checkpoint.level].name} · ${fmt(data.checkpoint.elapsed)}` : '暂无自动存档'}</p></div><button data-action="load-auto" ${data.checkpoint ? '' : 'disabled'}>读取</button></div><div class="save-slots">${rows}</div><p class="dialog-copy">夜班从自动断点继续，返修从值班台续修，复网从街区图续工。手动槽可保存当前机房，导出文件会带走整份进度。</p>`, button('export', '导出存档文件') + button('import', '导入存档文件') + button('back', '返回', 'primary'), 'saves');
+    modal('存档管理', `<div class="autosave-row"><div><b>自动存档</b><p>${data.checkpoint ? `${LEVELS[data.checkpoint.level].name} · ${fmt(data.checkpoint.elapsed)}` : '暂无自动存档'}</p></div><button data-action="load-auto" ${data.checkpoint ? '' : 'disabled'}>读取</button></div><div class="save-slots">${rows}</div><p class="dialog-copy">夜班从自动断点继续，返修从值班台续修，复网从街区图续工，电车从车票续乘。手动槽可保存当前机房，导出文件会带走整份进度。</p>`, button('export', '导出存档文件') + button('import', '导入存档文件') + button('back', '返回', 'primary'), 'saves');
   }
   function ledger() {
     if (screen === '') checkpoint();
-    const roomLabel = sim.level.commission ? sim.level.subtitle : String(sim.level.id + 1).padStart(2, '0');
+    const roomLabel = tramStopById(sim.level.id)?.place ?? (sim.level.commission ? sim.level.subtitle : String(sim.level.id + 1).padStart(2, '0'));
     const current = hasRun ? `<section class="work-order"><h2>${roomLabel} · ${sim.level.name}</h2><p>${sim.level.lesson}</p><ul>${sim.level.receivers.map(r => `<li><span>${r.name}</span><b>${sim.receivers[r.id].charge > 0 ? `${Math.min(sim.receivers[r.id].hits, sim.level.repeats)} / ${sim.level.repeats} 次` : '待供电'}</b></li>`).join('')}${sim.level.offGrid ? `<li><span>发射器离网</span><b>${sim.sourceOn ? '待关闭' : '已关闭'}</b></li>` : ''}</ul></section>` : '<p class="dialog-copy">进入机房后，这里会显示当前维修任务。</p>';
     const records = LEVELS.map(l => { const r = data.records[l.id]; return `<tr><td>${String(l.id + 1).padStart(2, '0')}</td><th>${l.name}</th><td>${r ? fmt(r.seconds) : '—'}</td><td>${r ? stars(r.stars) : '未完成'}</td></tr>`; }).join('');
-    modal('维修工单', `${repair && hasRun ? repairLetter(repair, data) : current}${hasRun && !repair && !sim.level.commission ? challengeMarkup() : ''}<h2 class="section-title">夜班记录</h2><table class="record-table"><thead><tr><th>机房</th><th>任务</th><th>最佳时间</th><th>记录</th></tr></thead><tbody>${records}</tbody></table>`, button('journal', '夜班通讯') + button('help', '操作指南') + button('back', '返回', 'primary'), 'ledger');
+    modal('维修工单', `${repair && hasRun ? repairLetter(repair, data) : current}${hasRun && !repair && !sim.level.commission && !tramStopById(sim.level.id) ? challengeMarkup() : ''}<h2 class="section-title">夜班记录</h2><table class="record-table"><thead><tr><th>机房</th><th>任务</th><th>最佳时间</th><th>记录</th></tr></thead><tbody>${records}</tbody></table>`, button('journal', '夜班通讯') + button('help', '操作指南') + button('back', '返回', 'primary'), 'ledger');
   }
   function photo() {
     if (!hasRun) { toast('进入机房后可以拍照。'); return; }
@@ -494,9 +535,10 @@ function boot() {
     $('repair-tally').hidden = !repair && !sim.level.commission;
     if(sim.level.commission) $('repair-tally').textContent = sim.commissionReadings().map((c,i)=>'甲乙丙丁戊'[i]+(c.passes?' ✓':' ○')).join('　')+' · 联检';
     if (repair) $('repair-tally').textContent = `本单已用 ${sim.moves} 次操作 · 精修目标 ${repair.budget} 次`;
+    const tramSignal = tramSignalText(sim);
     const coach = !observe && !repair && !data.records[sim.level.id] ? shiftCoach(sim, usingPad) : undefined;
-    $('lesson').textContent = coach ?? sim.level.lesson;
-    $('lesson').hidden = !coach && sim.elapsed > 20 && !observe;
+    $('lesson').textContent = tramSignal ?? coach ?? sim.level.lesson;
+    $('lesson').hidden = !tramSignal && !coach && sim.elapsed > 20 && !observe;
     for (const r of sim.level.receivers) {
       const s = sim.receivers[r.id], live = s.charge > 0;
       const row = $('receivers').querySelector<HTMLElement>(`[data-status-receiver="${r.id}"]`)!;
@@ -528,14 +570,15 @@ function boot() {
     $('sound-btn').textContent = `声音 ${data.settings.muted ? '关' : '开'}`;
   }
   function back() {
+    if (screen === 'tram-receipt') { menu(); return; }
     if (screen==='camp-map') {
       modalHistory.length=0;
       if (campaignOrigin==='pause' && hasRun && !sim.won) { resumeGame(); pause(); } else menu();
       return;
     }
     if (screen==='camp-address') { campaign.mailbag(); return; }
-    if (screen==='camp-district'||screen==='camp-log'||screen==='camp-ending'||screen==='camp-mail') { campaign.map(); return; }
-    if (screen==='camp-board'||screen==='camp-receipt') { campaign.district(data.campaign.selected); return; }
+    if (screen==='camp-route'||screen==='camp-route-ending'||screen==='camp-district'||screen==='camp-log'||screen==='camp-ending'||screen==='camp-mail') { campaign.map(); return; }
+    if (screen==='camp-board'||screen==='camp-receipt') { campaign.jobBack(); return; }
     if (screen === 'lens') lens = undefined;
     const previous = modalHistory.pop() ?? (hasRun ? '' : 'menu');
     setScreen(previous);
@@ -547,12 +590,14 @@ function boot() {
     else if (previous === 'ledger') ledger();
     else if (previous === 'journal') journal();
     else if (previous === 'levels') levels();
+    else if (previous === 'tram') showTramTicket(selectedTram);
     else if (previous === 'repairs') repairs();
     else if (previous === 'letter' && letter) readLetter(letter);
     else if (previous === 'lens') showLens();
     else if (previous === 'echo-editor') echoEditor();
     else if (previous === 'wardrobe') wardrobe();
     else if (previous === 'win') complete();
+    else if (previous === 'tram-receipt') tramReceipt();
     else { setScreen(''); $('overlay').innerHTML = ''; }
   }
   function action(a: string) {
@@ -606,6 +651,10 @@ function boot() {
       : a.startsWith('board-branch-') ? 'harbor-bell'
       : /^board-(early|late)-/.test(a) ? 'timetable-key' : /^(guide-|story-(next|prev)|replay-|letter-|mail-open-)/.test(a) ? 'page' : 'ui';
     sound.play(feedback);
+    if (a === 'street-relay') {
+      campaignOrigin = screen === 'pause' ? 'pause' : 'menu';
+      checkpoint(); campaign.route(); return;
+    }
     if (a==='campaign') {
       campaignOrigin=screen==='pause'?'pause':'menu'; checkpoint(); campaign.map(); return;
     }
@@ -651,6 +700,13 @@ function boot() {
       const [, n, kind] = a.split('-');
       const scene = availableScenes(data.story.seen, data.records).find(s => s.level === Number(n) && s.kind === kind);
       if (scene) playStory(scene, () => { setScreen('journal'); journal(); }, true);
+    }
+    else if (a === 'tram') showTramTicket(tramStopById(sim.level.id) && (screen === 'tram-receipt' || screen === 'pause') ? sim.level.id - TRAM_BASE : undefined);
+    else if (/^tram-stop-[0-2]$/.test(a) && (screen === 'tram' || screen === 'tram-receipt')) showTramTicket(Number(a.at(-1)));
+    else if (a === 'tram-next' && screen === 'tram-receipt') showTramTicket(sim.level.id - TRAM_BASE + 1);
+    else if (a === 'tram-ride' && screen === 'tram') {
+      const id = TRAM_BASE + selectedTram;
+      load(id, data.tram.draft?.snapshot.level === id ? data.tram.draft : undefined);
     }
     else if (a === 'continue') continueShift();
     else if (a === 'repairs') repairs();
@@ -888,7 +944,7 @@ function boot() {
       autoTimer += dt; if (autoTimer > 8) { checkpoint(); autoTimer = 0; }
     } else if (screen === 'menu' && !hasRun) sim.step(dt, false);
     for (const event of sim.drainEvents()) {
-      if (screen !== 'menu' && !(sim.level.commission && event.type === 'win')) sound.play(event.type === 'reflect' && event.prism ? `prism-${event.phase}` : event.type);
+      if (screen !== 'menu' && !(sim.level.commission && event.type === 'win')) sound.play(event.type === 'win' && tramStopById(sim.level.id) ? 'tram-bell' : event.type === 'reflect' && event.prism ? `prism-${event.phase}` : event.type);
       const subtitle = audioCaptions[event.type];
       if (subtitle && data.settings.audioCaptions && screen === '' && (now >= captionUntil || subtitle.priority >= captionPriority)) {
         const caption = $('sound-caption');
